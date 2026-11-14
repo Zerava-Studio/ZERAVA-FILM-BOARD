@@ -1,0 +1,2345 @@
+<!DOCTYPE html>
+<html lang="id" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Zerava Filmboard — Zerava Studio</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <!-- Supabase JS Client -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <script>
+    // ============================================
+    // SUPABASE & CLOUDFLARE R2 CONFIGURATION
+    // ============================================
+    // TODO: Replace with your actual Supabase credentials
+    const SUPABASE_URL = 'YOUR_SUPABASE_URL_HERE';
+    const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY_HERE';
+    
+    // TODO: Replace with your Cloudflare R2 endpoint
+    const CLOUDFLARE_R2_ENDPOINT = 'YOUR_R2_ENDPOINT_HERE';
+    const CLOUDFLARE_R2_BUCKET = 'zerava-filmboard';
+    
+    // Initialize Supabase client
+    let supabase = null;
+    try {
+      if (SUPABASE_URL !== 'YOUR_SUPABASE_URL_HERE' && SUPABASE_ANON_KEY !== 'YOUR_SUPABASE_ANON_KEY_HERE') {
+        supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        console.log('Supabase initialized successfully');
+      } else {
+        console.warn('Supabase credentials not configured. Using localStorage fallback.');
+      }
+    } catch (error) {
+      console.error('Supabase initialization error:', error);
+    }
+
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+          },
+          colors: {
+            zdark: '#11110F',
+            zcard: '#1A1A17',
+            zborder: '#2C2B27',
+            zbeige: '#D8BBA8',
+            zpurple: '#9276A8',
+            zteal: '#2B6E7E'
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+    html.dark body {
+      background-color: #11110F;
+      color: #F5F2EB;
+    }
+    html:not(.dark) body {
+      background-color: #F4F6F8;
+      color: #1E293B;
+    }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-thumb { background: rgba(150, 150, 150, 0.35); border-radius: 9999px; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col select-none">
+
+  <!-- =================================================================
+       CENTERED POP-UP MODAL (DI TENGAH LAYAR, BUKAN DI PINGGIR)
+       ================================================================= -->
+  <div id="centerPopupOverlay" class="fixed inset-0 z-[100] hidden items-center justify-center bg-black/75 backdrop-blur-sm p-5">
+    <div class="bg-white dark:bg-zcard border border-slate-200 dark:border-zborder rounded-3xl max-w-sm w-full p-6 text-center shadow-2xl transform transition-all space-y-4">
+      <div id="centerPopupIconWrap" class="w-14 h-14 rounded-full mx-auto flex items-center justify-center text-2xl bg-zbeige/20 text-zteal dark:text-zbeige">
+        <i id="centerPopupIcon" class="fa-solid fa-circle-check"></i>
+      </div>
+      <div class="space-y-1.5">
+        <h3 id="centerPopupTitle" class="text-base font-extrabold text-slate-900 dark:text-white">Judul Pop-up</h3>
+        <p id="centerPopupMessage" class="text-xs text-slate-600 dark:text-gray-300 leading-relaxed">Pesan informasi di tengah layar.</p>
+      </div>
+      <button onclick="closeCenterPopup()" class="w-full py-3 rounded-2xl bg-zteal dark:bg-zbeige text-white dark:text-zdark font-bold text-xs shadow-md hover:opacity-95 transition">
+        Mengerti
+      </button>
+    </div>
+  </div>
+
+  <!-- =================================================================
+       VIEW 1: LOGIN SCREEN
+       ================================================================= -->
+  <section id="loginView" class="min-h-screen flex items-center justify-center p-5">
+    <div class="bg-white dark:bg-zcard border border-slate-200 dark:border-zborder rounded-3xl max-w-md w-full p-7 shadow-2xl space-y-6">
+      <!-- Dynamic Logo Header -->
+      <div class="flex items-center justify-between">
+        <div class="zerava-logo-slot"></div>
+        <button onclick="toggleTheme()" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-zdark border border-slate-200 dark:border-zborder flex items-center justify-center text-slate-700 dark:text-zbeige text-sm">
+          <i class="fa-solid fa-circle-half-stroke"></i>
+        </button>
+      </div>
+
+      <div>
+        <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">Wellcome to Zerava FilmBoard</h2>
+        <p class="text-xs text-slate-500 dark:text-gray-400 mt-0.5">Sign In menggunakan Email atau Nama Member Zerava</p>
+      </div>
+
+      <form onsubmit="handleLogin(event)" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 dark:text-gray-300 mb-1.5">Email atau Username</label>
+          <div class="relative">
+            <i class="fa-regular fa-envelope absolute left-3.5 top-3 text-slate-400 text-sm"></i>
+            <input id="loginIdentifier" type="text" required placeholder="Contoh: zeravaproduction@gmail.com"
+              class="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-zdark border border-slate-200 dark:border-zborder text-xs text-slate-900 dark:text-white focus:outline-none focus:border-zteal dark:focus:border-zbeige" />
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 dark:text-gray-300 mb-1.5">Password</label>
+          <div class="relative">
+            <i class="fa-solid fa-lock absolute left-3.5 top-3 text-slate-400 text-sm"></i>
+            <input id="loginPassword" type="password" required placeholder="Masukkan password (default: 123456)"
+              class="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-zdark border border-slate-200 dark:border-zborder text-xs text-slate-900 dark:text-white focus:outline-none focus:border-zteal dark:focus:border-zbeige" />
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between text-xs">
+          <label class="flex items-center gap-2 cursor-pointer text-slate-600 dark:text-gray-300">
+            <input type="checkbox" checked class="rounded text-zteal dark:text-zbeige" />
+            <span>Ingat Saya</span>
+          </label>
+          <span class="text-slate-400">Pass Default: 123456</span>
+        </div>
+
+        <button type="submit" class="w-full py-3 rounded-2xl bg-zteal dark:bg-zbeige text-white dark:text-zdark font-extrabold text-xs shadow-lg hover:opacity-95 transition">
+          Sign In
+        </button>
+      </form>
+
+      <!-- Pintasan Login Cepat untuk Testing -->
+      <div class="pt-4 border-t border-slate-200 dark:border-zborder space-y-2">
+        <p class="text-[11px] font-bold text-slate-500 dark:text-zbeige">Pintasan Coba Login Cepat (Klik):</p>
+        <div class="grid grid-cols-2 gap-2 text-[11px]">
+          <button onclick="quickLogin('zeravaproduction@gmail.com')" class="p-2.5 rounded-xl bg-slate-100 dark:bg-zdark border border-slate-200 dark:border-zborder text-left hover:opacity-80">
+            <div class="font-bold text-slate-900 dark:text-white">Admin Zerava</div>
+            <div class="text-[10px] text-slate-500 dark:text-gray-400 truncate">zeravaproduction@gmail.com</div>
+          </button>
+          <button onclick="quickLogin('ghaniyyakbarrramandhio@gmail.com')" class="p-2.5 rounded-xl bg-slate-100 dark:bg-zdark border border-slate-200 dark:border-zborder text-left hover:opacity-80">
+            <div class="font-bold text-slate-900 dark:text-white">Ghaniyy (Ketua)</div>
+            <div class="text-[10px] text-slate-500 dark:text-gray-400 truncate">Kameramen • Ketua</div>
+          </button>
+          <button onclick="quickLogin('kikiivanda4@gmail.com')" class="p-2.5 rounded-xl bg-slate-100 dark:bg-zdark border border-slate-200 dark:border-zborder text-left hover:opacity-80">
+            <div class="font-bold text-slate-900 dark:text-white">Rifky Ivanda</div>
+            <div class="text-[10px] text-slate-500 dark:text-gray-400 truncate">Soundman • Anggota</div>
+          </button>
+          <button onclick="quickLogin('martiantian510@gmail.com')" class="p-2.5 rounded-xl bg-slate-100 dark:bg-zdark border border-slate-200 dark:border-zborder text-left hover:opacity-80">
+            <div class="font-bold text-slate-900 dark:text-white">Dwi Sebastian</div>
+            <div class="text-[10px] text-slate-500 dark:text-gray-400 truncate">Gaffer • Anggota</div>
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =================================================================
+       VIEW 2: HALAMAN PEMBUATAN PASSWORD (DARI LINK EMAIL ADMIN)
+       ================================================================= -->
+  <section id="setPasswordView" class="min-h-screen hidden items-center justify-center p-5">
+    <div class="bg-white dark:bg-zcard border border-slate-200 dark:border-zborder rounded-3xl max-w-md w-full p-7 shadow-2xl space-y-5">
+      <div class="zerava-logo-slot"></div>
+      <div>
+        <span class="text-[11px] uppercase tracking-wider font-bold text-zteal dark:text-zbeige">Aktivasi Akun Member</span>
+        <h2 class="text-xl font-extrabold text-slate-900 dark:text-white mt-1">Buat Password Baru</h2>
+        <p class="text-xs text-slate-500 dark:text-gray-400 mt-1">
+          Halo <b id="setPassEmailText" class="text-slate-900 dark:text-white"></b>, silakan buat password untuk mengaktifkan akun Zerava Filmboard-mu.
+        </p>
+      </div>
+
+      <form id="setPassForm" onsubmit="handleSaveNewPassword(event)" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold mb-1">Password Baru</label>
+          <input id="newPass1" type="password" required minlength="6" placeholder="Minimal 6 karakter"
+            class="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-zdark border border-slate-200 dark:border-zborder text-xs text-slate-900 dark:text-white" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold mb-1">Ulangi Password Baru</label>
+          <input id="newPass2" type="password" required minlength="6" placeholder="Ketik ulang password"
+            class="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-zdark border border-slate-200 dark:border-zborder text-xs text-slate-900 dark:text-white" />
+        </div>
+        <button type="submit" class="w-full py-3 rounded-2xl bg-zteal dark:bg-zbeige text-white dark:text-zdark font-extrabold text-xs">
+          Simpan Password
+        </button>
+      </form>
+
+      <div id="setPassDoneBox" class="hidden text-center space-y-4 py-3">
+        <div class="w-14 h-14 rounded-full bg-emerald-500/20 text-emerald-500 flex items-center justify-center text-2xl mx-auto">
+          <i class="fa-solid fa-check"></i>
+        </div>
+        <h3 class="text-base font-bold text-slate-900 dark:text-white">Password Berhasil Disimpan!</h3>
+        <p class="text-xs text-slate-500 dark:text-gray-300">Silakan klik tombol di bawah untuk masuk ke halaman Login.</p>
+        <button onclick="finishSetPasswordToLogin()" class="w-full py-3 rounded-2xl bg-zteal dark:bg-zbeige text-white dark:text-zdark font-extrabold text-xs">
+          Lanjutkan ke Halaman Login <i class="fa-solid fa-arrow-right ml-1"></i>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- =================================================================
+       VIEW 3: MAIN APP SHELL (TOP HEADER + PAGES + BOTTOM TAB BAR)
+       ================================================================= -->
+  <div id="mainAppShell" class="hidden min-h-screen flex flex-col pb-20">
+
+    <!-- TOP BAR: LOGO DI KIRI & NOTIFIKASI DI KANAN -->
+    <header class="sticky top-0 z-40 bg-white/90 dark:bg-zcard/90 backdrop-blur-md border-b border-slate-200 dark:border-zborder px-4 py-3">
+      <div class="max-w-4xl mx-auto flex items-center justify-between">
+        <!-- Logo Zerava (Otomatis Putih saat Dark Mode & Teal saat Light Mode) -->
+        <div onclick="navigateTo('home')" class="cursor-pointer zerava-logo-slot"></div>
+
+        <!-- Aksi Kanan: Toggle Tema & Tombol Halaman Notifikasi -->
+        <div class="flex items-center gap-2">
+          <button onclick="toggleTheme()" title="Ganti Tema Gelap/Terang"
+            class="w-10 h-10 rounded-2xl bg-slate-100 dark:bg-zdark border border-slate-200 dark:border-zborder flex items-center justify-center text-slate-700 dark:text-zbeige text-sm">
+            <i id="themeToggleIcon" class="fa-solid fa-sun"></i>
+          </button>
+
+          <button onclick="navigateTo('notifications')" title="Notifikasi"
+            class="relative w-10 h-10 rounded-2xl bg-slate-100 dark:bg-zdark border border-slate-200 dark:border-zborder flex items-center justify-center text-slate-700 dark:text-white text-sm">
+            <i class="fa-regular fa-bell"></i>
+            <span id="topNotifBadge" class="absolute -top-1 -right-1 px-1.5 py-0.2 rounded-full bg-red-500 text-white text-[10px] font-bold">3</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- MAIN DYNAMIC PAGE CONTAINER -->
+    <main class="flex-1 max-w-4xl w-full mx-auto p-4 md:p-6">
+
+      <!-- =============================================================
+           1. HOME PAGE
+           ============================================================= -->
+      <section id="page-home" class="app-page space-y-6">
+        <div class="rounded-3xl bg-gradient-to-br from-zteal to-slate-900 dark:from-[#1F1C24] dark:via-[#292330] dark:to-zcard border border-slate-200 dark:border-zbeige/20 p-6 md:p-8 text-white shadow-xl">
+          <span class="inline-block px-3 py-1 rounded-full bg-white/15 text-xs font-semibold mb-3">
+            Awal yang sederhana, Kelak jadi sinema.
+          </span>
+          <h1 class="text-2xl md:text-3xl font-extrabold">
+            Selamat Datang, <span id="homeUserName" class="text-zbeige">Member</span>!
+          </h1>
+          <p class="text-xs md:text-sm text-gray-200 mt-2 leading-relaxed">
+            Pantau materi perfilman terbaru, kolaborasi naskah & shoot list di Production Film, serta diskusi tim Zerava Studio.
+          </p>
+        </div>
+
+        <!-- Materi Baru Di-upload (What's New) -->
+        <div class="space-y-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <h2 class="text-base font-extrabold text-slate-900 dark:text-white">What’s New</h2>
+              <p class="text-xs text-slate-500 dark:text-gray-400">Materi terbaru yang baru saja di-upload di Zerava Class</p>
+            </div>
+            <button onclick="navigateTo('class')" class="text-xs font-bold text-zteal dark:text-zbeige hover:underline">
+              Lihat Semua <i class="fa-solid fa-arrow-right ml-1"></i>
+            </button>
+          </div>
+          <div id="homeWhatsNewGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-4"></div>
+        </div>
+
+        <!-- About Us Resmi -->
+        <div class="bg-white dark:bg-zcard border border-slate-200 dark:border-zborder rounded-3xl p-6 space-y-4 shadow-sm">
+          <div class="space-y-2">
+            <span class="text-[11px] uppercase tracking-widest font-bold text-zteal dark:text-zpurple">Tentang Kami</span>
+            <h3 class="text-lg font-extrabold text-slate-900 dark:text-white">About Us — Zerava Production</h3>
+            <p class="text-xs md:text-sm text-slate-600 dark:text-gray-300 leading-relaxed">
+              Zerava Production adalah ruang bagi mereka yang memiliki ketertarikan pada dunia perfilman untuk belajar, bertumbuh, dan menciptakan karya bersama. Lebih dari sekadar komunitas produksi film, Zerava hadir sebagai keluarga kreatif tempat setiap ide dihargai, setiap proses menjadi pembelajaran, dan setiap individu memiliki kesempatan untuk berkembang. Karena bagi Zerava, sebuah karya besar tidak selalu dimulai dari sesuatu yang besar, tetapi dari keberanian untuk memulai bersama.
+            </p>
+          </div>
+          <div class="pt-1">
+            <a href="https://zerava.web.id" target="_blank" rel="noopener noreferrer"
+              class="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-zteal dark:bg-zbeige text-white dark:text-zdark font-extrabold text-xs shadow hover:opacity-95 transition">
+              <span>Pelajari Lebih Lanjut</span>
+              <i class="fa-solid fa-arrow-up-right-from-square"></i>
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <!-- =============================================================
+           2. CHAT LIST PAGE (DAFTAR GRUP & MEMBER)
+           ============================================================= -->
+      <section id="page-chat" class="app-page hidden space-y-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">Chat & Komunitas</h2>
+            <p class="text-xs text-slate-500 dark:text-gray-400">Klik foto/nama member untuk membuka halaman profil & julukan</p>
+          </div>
+          <button onclick="navigateTo('create-group')" class="px-4 py-2.5 rounded-2xl bg-zteal dark:bg-zbeige text-white dark:text-zdark font-extrabold text-xs">
+            <i class="fa-solid fa-plus mr-1"></i> Buat Grup
+          </button>
+        </div>
+
+        <!-- Search & Filter Tabs -->
+        <div class="space-y-2.5">
+          <div class="relative">
+            <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-3 text-slate-400 text-xs"></i>
+            <input id="chatSearchInput" oninput="renderChatListPage()" type="text" placeholder="Temukan Grup atau Member..."
+              class="w-full pl-9 pr-4 py-2.5 rounded-2xl bg-white dark:bg-zcard border border-slate-200 dark:border-zborder text-xs text-slate-900 dark:text-white focus:outline-none" />
+          </div>
+          <div class="grid grid-cols-3 gap-1.5 bg-white dark:bg-zcard p-1.5 rounded-2xl border border-slate-200 dark:border-zborder text-xs">
+            <button onclick="setChatTab('all')" id="chatFilter-all" class="py-2 rounded-xl font-bold bg-zteal dark:bg-zbeige text-white dark:text-zdark">All</button>
+            <button onclick="setChatTab('group')" id="chatFilter-group" class="py-2 rounded-xl font-bold text-slate-500 dark:text-gray-400">Group</button>
+            <button onclick="setChatTab('member')" id="chatFilter-member" class="py-2 rounded-xl font-bold text-slate-500 dark:text-gray-400">Member (30)</button>
+          </div>
+        </div>
+
+        <div id="chatDirectoryList" class="bg-white dark:bg-zcard border border-slate-200 dark:border-zborder rounded-3xl divide-y divide-slate-100 dark:divide-zborder overflow-hidden"></div>
+      </section>
+
+      <!-- =============================================================
+           2B. RUANG OBROLAN AKTIF (HALAMAN PENUH)
+           ============================================================= -->
+      <section id="page-chat-room" class="app-page hidden flex flex-col h-[calc(100vh-155px)] bg-white dark:bg-zcard border border-slate-200 dark:border-zborder rounded-3xl overflow-hidden">
+        <!-- Room Header -->
+        <div id="chatRoomHeader" class="p-3.5 border-b border-slate-200 dark:border-zborder flex items-center justify-between bg-slate-50 dark:bg-zcard"></div>
+
+        <!-- Messages Scroll Box -->
+        <div id="chatRoomMessages" class="flex-1 p-4 overflow-y-auto space-y-3 bg-slate-50/50 dark:bg-[#141412]"></div>
+
+        <!-- Reply Banner -->
+        <div id="chatReplyBanner" class="hidden px-4 py-2 bg-slate-100 dark:bg-zdark border-t border-slate-200 dark:border-zborder items-center justify-between text-xs">
+          <div class="truncate">
+            <span class="text-slate-500 dark:text-gray-400">Membalas <b id="chatReplySender" class="text-zteal dark:text-zbeige"></b>:</span>
+            <span id="chatReplyText" class="ml-1 text-slate-700 dark:text-gray-300"></span>
+          </div>
+          <button onclick="clearChatReply()" class="text-slate-400 hover:text-red-400"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+
+        <!-- Input Bar -->
+        <form onsubmit="handleSendChatMessage(event)" class="p-3 border-t border-slate-200 dark:border-zborder flex items-center gap-2 bg-white dark:bg-zcard">
+          <input id="chatRoomInput" type="text" required placeholder="Ketik pesan..."
+            class="flex-1 px-4 py-2.5 rounded-2xl bg-slate-100 dark:bg-zdark border border-slate-200 dark:border-zborder text-xs text-slate-900 dark:text-white focus:outline-none" />
+          <button type="submit" class="px-4 py-2.5 rounded-2xl bg-zteal dark:bg-zbeige text-white dark:text-zdark font-extrabold text-xs">
+            <i class="fa-solid fa-paper-plane"></i>
+          </button>
+        </form>
+      </section>
+
+      <!-- =============================================================
+           2C. HALAMAN BUAT GRUP BARU (HALAMAN PENUH + TOMBOL KEMBALI)
+           ============================================================= -->
+      <section id="page-create-group" class="app-page hidden space-y-5">
+        <button onclick="goBack()" class="inline-flex items-center gap-2 text-xs font-bold text-zteal dark:text-zbeige">
+          <i class="fa-solid fa-arrow-left"></i> Kembali
+        </button>
+        <div class="bg-white dark:bg-zcard border border-slate-200 dark:border-zborder rounded-3xl p-6 space-y-5">
+          <div>
+            <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">Buat Grup Baru</h2>
+            <p class="text-xs text-slate-500 dark:text-gray-400">Atur foto profil grup, nama grup, dan pilih anggota tim produksi</p>
+          </div>
+          <form onsubmit="handleSaveNewGroup(event)" class="space-y-4">
+            <div>
+              <label class="block text-xs font-bold mb-1.5">Nama Grup *</label>
+              <input id="createGroupName" type="text" required placeholder="Contoh: Tim Produksi FLSN 2026"
+                class="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-zdark border border-slate-200 dark:border-zborder text-xs text-slate-900 dark:text-white" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold mb-1.5">Foto Profil Grup (Opsional, Maks 15 MB)</label>
+              <input id="createGroupPhoto" type="file" accept="image/*" onchange="checkFileMax15MB(this)"
+                class="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:bg-zteal dark:file:bg-zbeige file:text-white dark:file:text-zdark file:font-bold" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold mb-1.5">Pilih Member Grup</label>
+              <div id="createGroupMembersList" class="max-h-64 overflow-y-auto divide-y divide-slate-100 dark:divide-zborder bg-slate-50 dark:bg-zdark rounded-2xl border border-slate-200 dark:border-zborder p-2"></div>
+            </div>
+            <button type="submit" class="w-full py-3 rounded-2xl bg-zteal dark:bg-zbeige text-white dark:text-zdark font-extrabold text-xs">
+              Simpan & Buat Grup
+            </button>
+          </form>
+        </div>
+      </section>
+
+      <!-- =============================================================
+           2D. HALAMAN INFO GRUP & ANGGOTA (HALAMAN PENUH + TOMBOL KEMBALI)
+           ============================================================= -->
+      <section id="page-group-info" class="app-page hidden space-y-5">
+        <button onclick="goBack()" class="inline-flex items-center gap-2 text-xs font-bold text-zteal dark:text-zbeige">
+          <i class="fa-solid fa-arrow-left"></i> Kembali ke Ruang Chat
+        </button>
+        <div id="groupInfoPageContainer" class="bg-white dark:bg-zcard border border-slate-200 dark:border-zborder rounded-3xl p-6 space-y-6"></div>
+      </section>
+
+      <!-- =============================================================
+           2E. HALAMAN PROFIL MEMBER LAIN & UBAH JULUKAN (BUKAN MODAL!)
+           ============================================================= -->
+      <section id="page-member-profile" class="app-page hidden space-y-5">
+        <button onclick="goBack()" class="inline-flex items-center gap-2 text-xs font-bold text-zteal dark:text-zbeige">
+          <i class="fa-solid fa-arrow-left"></i> Kembali
+        </button>
+        <div id="memberProfilePageContent" class="bg-white dark:bg-zcard border border-slate-200 dark:border-zborder rounded-3xl p-6 space-y-6"></div>
+      </section>
+
+      <!-- =============================================================
+           3. PRODUCTION FILM PAGE (DAFTAR PROJECT)
+           ============================================================= -->
+      <section id="page-production" class="app-page hidden space-y-5">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">Production Film</h2>
+            <p class="text-xs text-slate-500 dark:text-gray-400">Kelola project film Zerava Studio dari ide hingga dokumen syuting</p>
+          </div>
+          <button onclick="navigateTo('create-project')" class="px-4 py-2.5 rounded-2xl bg-zteal dark:bg-zbeige text-white dark:text-zdark font-extrabold text-xs self-start">
+            <i class="fa-solid fa-plus mr-1"></i> Tambah Project
+          </button>
+        </div>
+
+        <div class="relative">
+          <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-3 text-slate-400 text-xs"></i>
+          <input id="projSearchInput" oninput="renderProductionList()" type="text" placeholder="Temukan Project Film..."
+            class="w-full pl-9 pr-4 py-2.5 rounded-2xl bg-white dark:bg-zcard border border-slate-200 dark:border-zborder text-xs text-slate-900 dark:text-white focus:outline-none" />
+        </div>
+
+        <div id="productionProjectsGrid" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+      </section>
+
+      <!-- =============================================================
+           3B. HALAMAN TAMBAH PROJECT BARU (HALAMAN PENUH + INPUT DATE)
+           ============================================================= -->
+      <section id="page-create-project" class="app-page hidden space-y-5">
+        <button onclick="goBack()" class="inline-flex items-center gap-2 text-xs font-bold text-zteal dark:text-zbeige">
+          <i class="fa-solid fa-arrow-left"></i> Kembali ke Production Film
+        </button>
+        <div class="bg-white dark:bg-zcard border border-slate-200 dark:border-zborder rounded-3xl p-6 space-y-5">
+          <div>
+            <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">Tambah Project Film Baru</h2>
+            <p class="text-xs text-slate-500 dark:text-gray-400">Gunakan kalender tanggal resmi untuk mengatur jadwal produksi & tenggat pengumpulan</p>
+          </div>
+          <form onsubmit="handleSaveNewProject(event)" class="space-y-4">
+            <div>
+              <label class="block text-xs font-bold mb-1">Judul Project Film *</label>
+              <input id="projTitleIn" type="text" required placeholder="Contoh: Project FLSN: Berderap"
+                class="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-zdark border border-slate-200 dark:border-zborder text-xs text-slate-900 dark:text-white" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold mb-1">Deskripsi Singkat *</label>
+              <textarea id="projDescIn" rows="3" required placeholder="Sinopsis singkat atau tujuan produksi..."
+                class="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-zdark border border-slate-200 dark:border-zborder text-xs text-slate-900 dark:text-white"></textarea>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label class="block text-xs font-bold mb-1">Mulai Produksi *</label>
+                <input id="projStartDateIn" type="date" required
+                  class="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 dark:bg-zdark border border-slate-200 dark:border-zborder text-xs text-slate-900 dark:text-white" />
+              </div>
+              <div>
+                <label class="block text-xs font-bold mb-1">Selesai Produksi *</label>
+                <input id="projEndDateIn" type="date" required
+                  class="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 dark:bg-zdark border border-slate-200 dark:border-zborder text-xs text-slate-900 dark:text-white" />
+              </div>
+              <div>
+                <label class="block text-xs font-bold mb-1">Tanggal Deadline *</label>
+                <input id="projDeadlineIn" type="date" required
+                  class="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 dark:bg-zdark border border-slate-200 dark:border-zborder text-xs text-slate-900 dark:text-white" />
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-bold mb-1">Thumbnail Project (Maks 15 MB)</label>
+              <input id="projThumbIn" type="file" accept="image/*" onchange="checkFileMax15MB(this)"
+                class="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:bg-zteal dark:file:bg-zbeige file:text-white dark:file:text-zdark file:font-bold" />
+            </div>
+            <button type="submit" class="w-full py-3 rounded-2xl bg-zteal dark:bg-zbeige text-white dark:text-zdark font-extrabold text-xs">
+              Simpan Project Film
+            </button>
+          </form>
+        </div>
+      </section>
+
+      <!-- =============================================================
+           3C. DETAIL PROJECT FILM & 5 FITUR PRODUKSI
+           ============================================================= -->
+      <section id="page-project-detail" class="app-page hidden space-y-5">
+        <button onclick="goBack()" class="inline-flex items-center gap-2 text-xs font-bold text-zteal dark:text-zbeige">
+          <i class="fa-solid fa-arrow-left"></i> Kembali ke Daftar Project
+        </button>
+
+        <div id="projectDetailTopCard" class="bg-white dark:bg-zcard border border-slate-200 dark:border-zborder rounded-3xl p-5 space-y-4"></div>
+
+        <!-- 5 Sub-Fitur Navigation -->
+        <div class="flex gap-2 overflow-x-auto pb-1">
+          <button onclick="selectProjSubFeature('ide')" id="subFeat-ide" class=" px-4 py-2.5 rounded-2xl text-xs font-extrabold whitespace-nowrap">1. Ide</button>
+          <button onclick="selectProjSubFeature('naskah')" id="subFeat-naskah" class="px-4 py-2.5 rounded-2xl text-xs font-extrabold whitespace-nowrap">2. Naskah</button>
+          <button onclick="selectProjSubFeature('shootlist')" id="subFeat-shootlist" class="px-4 py-2.5 rounded-2xl text-xs font-extrabold whitespace-nowrap">3. Shoot List</button>
+          <button onclick="selectProjSubFeature('storyboard')" id="subFeat-storyboard" class="px-4 py-2.5 rounded-2xl text-xs font-extrabold whitespace-nowrap">4. Story Board</button>
+          <button onclick="selectProjSubFeature('dokumen')" id="subFeat-dokumen" class="px-4 py-2.5 rounded-2xl text-xs font-extrabold whitespace-nowrap">5. Dokumen</button>
+        </div>
+
+        <div id="projectSubFeatureBody" class="bg-white dark:bg-zcard border border-slate-200 dark:border-zborder rounded-3xl p-5"></div>
+      </section>
+
+      <!-- =============================================================
+           3D. HALAMAN TAMBAH IDE / UPLOAD FILE PROJECT (HALAMAN PENUH)
+           ============================================================= -->
+      <section id="page-project-add-item" class="app-page hidden space-y-5">
+        <button onclick="goBack()" class="inline-flex items-center gap-2 text-xs font-bold text-zteal dark:text-zbeige">
+          <i class="fa-solid fa-arrow-left"></i> Kembali ke Detail Project
+        </button>
+        <div id="projectAddItemFormBox" class="bg-white dark:bg-zcard border border-slate-200 dark:border-zborder rounded-3xl p-6"></div>
+      </section>
+
+      <!-- =============================================================
+           4. ZERAVA CLASS PAGE
+           ============================================================= -->
+      <section id="page-class" class="app-page hidden space-y-5">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">Zerava Class</h2>
+            <p class="text-xs text-slate-500 dark:text-gray-400">Mau belajar tentang film? Yuk sharing-sharing ilmu di sini</p>
+          </div>
+          <button onclick="navigateTo('create-class')" class="px-4 py-2.5 rounded-2xl bg-zteal dark:bg-zbeige text-white dark:text-zdark font-extrabold text-xs self-start">
+            <i class="fa-solid fa-plus mr-1"></i> Tambah Materi
+          </button>
+        </div>
+
+        <div class="relative">
+          <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-3 text-slate-400 text-xs"></i>
+          <input id="classSearchIn" oninput="renderClassList()" type="text" placeholder="Temukan Materi..."
+            class="w-full pl-9 pr-4 py-2.5 rounded-2xl bg-white dark:bg-zcard border border-slate-200 dark:border-zborder text-xs text-slate-900 dark:text-white focus:outline-none" />
+        </div>
+
+        <div id="classGridContainer" class="grid grid-cols-1 sm:grid-cols-2 gap-4"></div>
+      </section>
+
+      <!-- =============================================================
+           4B. HALAMAN TAMBAH MATERI ZERAVA CLASS (HALAMAN PENUH)
+           ============================================================= -->
+      <section id="page-create-class" class="app-page hidden space-y-5">
+        <button onclick="goBack()" class="inline-flex items-center gap-2 text-xs font-bold text-zteal dark:text-zbeige">
+          <i class="fa-solid fa-arrow-left"></i> Kembali ke Zerava Class
+        </button>
+        <div class="bg-white dark:bg-zcard border border-slate-200 dark:border-zborder rounded-3xl p-6 space-y-5">
+          <div>
+            <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">Tambah Materi Baru</h2>
+            <p class="text-xs text-slate-500 dark:text-gray-400">Bagikan file modul (Maks 15 MB) atau link materi pembelajaran perfilman</p>
+          </div>
+          <form onsubmit="handleSaveNewClassMaterial(event)" class="space-y-4">
+            <div>
+              <label class="block text-xs font-bold mb-1">Judul Materi *</label>
+              <input id="newMatTitle" type="text" required placeholder="Contoh: Camera Angle & Framing"
+                class="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-zdark border border-slate-200 dark:border-zborder text-xs text-slate-900 dark:text-white" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold mb-1">Deskripsi Materi *</label>
+              <textarea id="newMatDesc" rows="4" required placeholder="Jelaskan ringkasan materi..."
+                class="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-zdark border border-slate-200 dark:border-zborder text-xs text-slate-900 dark:text-white"></textarea>
+            </div>
+            <div>
+              <label class="block text-xs font-bold mb-1">Thumbnail Materi (Maks 15 MB)</label>
+              <input id="newMatThumb" type="file" accept="image/*" onchange="checkFileMax15MB(this)"
+                class="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:bg-zteal dark:file:bg-zbeige file:text-white dark:file:text-zdark file:font-bold" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold mb-1">Upload File Dokumen Materi (Maks 15 MB)</label>
+              <input id="newMatFile" type="file" onchange="checkFileMax15MB(this, 'newMatLink')"
+                class="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:bg-zpurple file:text-white file:font-bold" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold mb-1">Atau Link Materi (Google Drive / Docs / YouTube / Canva)</label>
+              <input id="newMatLink" type="url" placeholder="https://..."
+                class="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-zdark border border-slate-200 dark:border-zborder text-xs text-slate-900 dark:text-white" />
+            </div>
+            <button type="submit" class="w-full py-3 rounded-2xl bg-zteal dark:bg-zbeige text-white dark:text-zdark font-extrabold text-xs">
+              Bagikan Materi Sekarang
+            </button>
+          </form>
+        </div>
+      </section>
+
+      <!-- =============================================================
+           4C. HALAMAN DETAIL MATERI ZERAVA CLASS (HALAMAN PENUH!)
+           ============================================================= -->
+      <section id="page-class-detail" class="app-page hidden space-y-5">
+        <button onclick="goBack()" class="inline-flex items-center gap-2 text-xs font-bold text-zteal dark:text-zbeige">
+          <i class="fa-solid fa-arrow-left"></i> Kembali
+        </button>
+        <div id="classDetailPageContent" class="bg-white dark:bg-zcard border border-slate-200 dark:border-zborder rounded-3xl overflow-hidden shadow-lg"></div>
+      </section>
+
+      <!-- =============================================================
+           5. NOTIFICATIONS PAGE (DISEBERANG LOGO ATAS)
+           ============================================================= -->
+      <section id="page-notifications" class="app-page hidden space-y-5">
+        <div class="bg-white dark:bg-zcard border border-slate-200 dark:border-zborder rounded-3xl p-5 space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 class="text-lg font-extrabold text-slate-900 dark:text-white">Notifikasi & Pesan Masuk</h2>
+              <p id="pushStatusSubtitle" class="text-xs text-slate-500 dark:text-gray-400">Status Izin Notifikasi Perangkat: Mengecek...</p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <button onclick="setupAndTestPushNotification()" class="px-4 py-2.5 rounded-2xl bg-zteal dark:bg-zbeige text-white dark:text-zdark font-extrabold text-xs">
+                <i class="fa-solid fa-bell mr-1"></i> Tes Kirim Notif (Muncul Saat Pindah Tab)
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div id="notifItemsContainer" class="bg-white dark:bg-zcard border border-slate-200 dark:border-zborder rounded-3xl divide-y divide-slate-100 dark:divide-zborder overflow-hidden"></div>
+      </section>
+
+      <!-- =============================================================
+           6. MY PROFIL PAGE (+ TOMBOL AKSES ADMIN & TOMBOL LOGOUT)
+           ============================================================= -->
+      <section id="page-profile" class="app-page hidden space-y-5">
+        <div class="bg-white dark:bg-zcard border border-slate-200 dark:border-zborder rounded-3xl p-6 space-y-6">
+          <div class="flex flex-col sm:flex-row items-center gap-5 pb-5 border-b border-slate-200 dark:border-zborder">
+            <div class="relative">
+              <img id="myProfAvatarImg" src="" class="w-24 h-24 rounded-3xl object-cover border-2 border-zteal dark:border-zbeige" />
+              <label class="absolute -bottom-2 -right-2 w-8 h-8 rounded-xl bg-zteal dark:bg-zbeige text-white dark:text-zdark flex items-center justify-center cursor-pointer shadow">
+                <i class="fa-solid fa-camera text-xs"></i>
+                <input type="file" accept="image/*" class="hidden" onchange="handleChangeMyAvatar(event)" />
+              </label>
+            </div>
+            <div class="text-center sm:text-left space-y-1 flex-1">
+              <span id="myProfRolePill" class="px-3 py-0.5 rounded-full bg-zpurple/20 text-zteal dark:text-zbeige text-[11px] font-bold">Anggota</span>
+              <h2 id="myProfFullName" class="text-xl font-extrabold text-slate-900 dark:text-white">Nama Lengkap</h2>
+              <p id="myProfEmailText" class="text-xs text-slate-500 dark:text-gray-400">email@gmail.com</p>
+            </div>
+
+            <!-- Tombol Menuju Halaman Admin (Muncul di My Profil Admin) -->
+            <button id="openAdminPageBtn" onclick="navigateTo('admin')" class="hidden px-4 py-2.5 rounded-2xl bg-amber-500/20 border border-amber-500/40 text-amber-600 dark:text-amber-300 font-extrabold text-xs">
+              <i class="fa-solid fa-user-shield mr-1.5"></i> Buka Halaman Admin
+            </button>
+          </div>
+
+          <form onsubmit="handleUpdateMyProfile(event)" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-bold mb-1">Nama Lengkap</label>
+              <input id="myProfNameIn" type="text" required class="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-zdark border border-slate-200 dark:border-zborder text-xs text-slate-900 dark:text-white" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold mb-1">Divisi</label>
+              <input id="myProfDivisiIn" type="text" required class="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-zdark border border-slate-200 dark:border-zborder text-xs text-slate-900 dark:text-white" />
+            </div>
+            <div class="sm:col-span-2">
+              <label class="block text-xs font-bold mb-1">Bio / About You</label>
+              <textarea id="myProfBioIn" rows="2" class="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-zdark border border-slate-200 dark:border-zborder text-xs text-slate-900 dark:text-white"></textarea>
+            </div>
+            <div class="sm:col-span-2 flex justify-end">
+              <button type="submit" class="px-5 py-2.5 rounded-2xl bg-zteal dark:bg-zbeige text-white dark:text-zdark font-extrabold text-xs">
+                Simpan Profil
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Daftar Materi & File yang Dibagikan -->
+        <div class="bg-white dark:bg-zcard border border-slate-200 dark:border-zborder rounded-3xl p-6 space-y-3">
+          <h3 class="text-sm font-extrabold text-slate-900 dark:text-white">Daftar File & Materi yang Kamu Bagikan</h3>
+          <div id="mySharedItemsBox" class="space-y-2"></div>
+        </div>
+
+        <!-- TOMBOL LOGOUT DI HALAMAN PROFIL (SESUAI REVISI #7) -->
+        <div class="bg-white dark:bg-zcard border border-red-500/30 rounded-3xl p-5 flex items-center justify-between">
+          <div>
+            <h4 class="text-sm font-extrabold text-slate-900 dark:text-white">Keluar dari Akun</h4>
+            <p class="text-xs text-slate-500 dark:text-gray-400">Kembali ke halaman Sign In Zerava Filmboard</p>
+          </div>
+          <button onclick="handleLogout()" class="px-5 py-2.5 rounded-2xl bg-red-500 text-white font-extrabold text-xs shadow hover:bg-red-600 transition">
+            <i class="fa-solid fa-right-from-bracket mr-1.5"></i> Logout
+          </button>
+        </div>
+      </section>
+
+      <!-- =============================================================
+           7. HALAMAN ADMIN (DIAKSES DARI MY PROFIL ADMIN)
+           ============================================================= -->
+      <section id="page-admin" class="app-page hidden space-y-5">
+        <button onclick="goBack()" class="inline-flex items-center gap-2 text-xs font-bold text-zteal dark:text-zbeige">
+          <i class="fa-solid fa-arrow-left"></i> Kembali ke My Profil
+        </button>
+
+        <div class="bg-white dark:bg-zcard border border-slate-200 dark:border-zborder rounded-3xl p-6 space-y-5">
+          <div>
+            <span class="px-3 py-0.5 rounded-full bg-amber-500/20 text-amber-500 text-[11px] font-bold">Panel Admin Zerava</span>
+            <h2 class="text-xl font-extrabold text-slate-900 dark:text-white mt-1">Daftarkan Calon Member via Email</h2>
+            <p class="text-xs text-slate-500 dark:text-gray-400">Kirim undangan pembuatan password ke email calon member</p>
+          </div>
+
+          <form onsubmit="handleAdminSendInvite(event)" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-bold mb-1">Email Calon Member *</label>
+              <input id="admInviteEmail" type="email" required placeholder="calonmember@gmail.com"
+                class="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-zdark border border-slate-200 dark:border-zborder text-xs text-slate-900 dark:text-white" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold mb-1">Nama Lengkap *</label>
+              <input id="admInviteName" type="text" required placeholder="Nama Lengkap"
+                class="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-zdark border border-slate-200 dark:border-zborder text-xs text-slate-900 dark:text-white" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold mb-1">Divisi *</label>
+              <input id="admInviteDivisi" type="text" required placeholder="Contoh: Kameramen / Editor / Sutradara"
+                class="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-zdark border border-slate-200 dark:border-zborder text-xs text-slate-900 dark:text-white" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold mb-1">Peran</label>
+              <input id="admInviteRole" type="text" value="Anggota" required
+                class="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-zdark border border-slate-200 dark:border-zborder text-xs text-slate-900 dark:text-white" />
+            </div>
+            <div class="sm:col-span-2">
+              <button type="submit" class="w-full py-3 rounded-2xl bg-zteal dark:bg-zbeige text-white dark:text-zdark font-extrabold text-xs">
+                <i class="fa-solid fa-paper-plane mr-1.5"></i> Kirim Link Pembuatan Password ke Email
+              </button>
+            </div>
+          </form>
+
+          <div class="pt-4 border-t border-slate-200 dark:border-zborder space-y-3">
+            <h3 class="text-xs font-extrabold uppercase tracking-wider text-slate-400">Riwayat Undangan Terkirim</h3>
+            <div id="adminInviteHistoryList" class="space-y-2.5"></div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- =================================================================
+         BOTTOM TAB BAR (5 MENU: HOME, CHAT, PRODUCTION, CLASS, PROFIL)
+         ================================================================= -->
+    <nav class="fixed bottom-0 inset-x-0 z-40 bg-white/95 dark:bg-zcard/95 backdrop-blur-md border-t border-slate-200 dark:border-zborder">
+      <div class="max-w-md mx-auto grid grid-cols-5 py-1.5 px-2">
+        <button onclick="navigateTo('home')" id="bnav-home" class="bnav-item flex flex-col items-center justify-center py-1.5 rounded-2xl transition">
+          <i class="fa-solid fa-house text-base"></i>
+          <span class="text-[10px] font-bold mt-1">Home</span>
+        </button>
+        <button onclick="navigateTo('chat')" id="bnav-chat" class="bnav-item flex flex-col items-center justify-center py-1.5 rounded-2xl transition">
+          <i class="fa-regular fa-comments text-base"></i>
+          <span class="text-[10px] font-bold mt-1">Chat</span>
+        </button>
+        <button onclick="navigateTo('production')" id="bnav-production" class="bnav-item flex flex-col items-center justify-center py-1.5 rounded-2xl transition">
+          <i class="fa-solid fa-clapperboard text-base"></i>
+          <span class="text-[10px] font-bold mt-1">Production</span>
+        </button>
+        <button onclick="navigateTo('class')" id="bnav-class" class="bnav-item flex flex-col items-center justify-center py-1.5 rounded-2xl transition">
+          <i class="fa-solid fa-graduation-cap text-base"></i>
+          <span class="text-[10px] font-bold mt-1">Class</span>
+        </button>
+        <button onclick="navigateTo('profile')" id="bnav-profile" class="bnav-item flex flex-col items-center justify-center py-1.5 rounded-2xl transition">
+          <i class="fa-regular fa-user text-base"></i>
+          <span class="text-[10px] font-bold mt-1">Profil</span>
+        </button>
+      </div>
+    </nav>
+
+  </div>
+
+  <!-- =================================================================
+       JAVASCRIPT ENGINE
+       ================================================================= -->
+  <script>
+    const MAX_UPLOAD_BYTES = 15 * 1024 * 1024; // 15 MB
+
+    // 1. RENDER LOGO ZERAVA OTOMATIS (PUTIH SAAT GELAP, TEAL SAAT TERANG)
+    function renderAllLogos() {
+      const isDark = document.documentElement.classList.contains('dark');
+      const imgFile = isDark ? 'Zerava (putih).png' : 'Document from ᨳ Jellyna (4).png';
+      const fillColor = isDark ? '#FFFFFF' : '#2B6E7E';
+
+      const svgFallback = `
+        <div class="flex items-center gap-2.5">
+          <svg width="38" height="32" viewBox="0 0 120 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M22 12C16 6 25 -3 33 4L88 50C94 55 90 66 80 66H18C9 66 4 59 4 52C4 45 9 38 18 38H55L22 12Z" fill="${fillColor}"/>
+            <circle cx="16" cy="86" r="12" fill="${fillColor}"/>
+            <rect x="38" y="74" width="54" height="24" rx="12" fill="${fillColor}"/>
+          </svg>
+          <div class="leading-tight">
+            <div class="font-extrabold text-base tracking-tight" style="color:${fillColor}">Zerava Studio</div>
+            <div class="text-[9px] font-semibold opacity-90" style="color:${fillColor}">Awal yang sederhana, Kelak jadi sinema.</div>
+          </div>
+        </div>
+      `;
+
+      document.querySelectorAll('.zerava-logo-slot').forEach(slot => {
+        slot.innerHTML = `
+          <img src="${imgFile}" alt="Zerava Studio" class="h-8 object-contain"
+            onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+          <div style="display:none">${svgFallback}</div>
+        `;
+      });
+
+      const themeIcon = document.getElementById('themeToggleIcon');
+      if (themeIcon) {
+        themeIcon.className = isDark ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
+      }
+    }
+
+    function toggleTheme() {
+      document.documentElement.classList.toggle('dark');
+      localStorage.setItem('zerava_theme', document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+      renderAllLogos();
+    }
+
+    // 2. DATA 30 ANGGOTA RESMI + ADMIN ZERAVA
+    const rawMembersList = [
+      ['Admin Zerava Studio', 'zeravaproduction@gmail.com', 'Management', 'Admin'],
+      ['Rifky Ivanda Hardiansyah', 'kikiivanda4@gmail.com', 'Soundman', 'Anggota'],
+      ['Ektada Ageng B.M', 'billyminecraft776@gmail.com', 'Behind the scene', 'Anggota'],
+      ['Carissa Pabha Jivita', 'carissapj2009@gmail.com', 'Wardrobe', 'Anggota'],
+      ["Faiz Musyafa'", 'paizmsy@gmail.com', 'Sutradara', 'Anggota'],
+      ['Dherick Radhitya Irawan', 'dherickradhit95@gmail.com', 'Artistik', 'Anggota'],
+      ['Rasya Nur Pahlevy', 'rnurpahlevy@gmail.com', 'Aktor', 'Anggota'],
+      ['Angelina Rahma Firauzza', 'firauzzaangelin@gmail.com', 'Editor', 'Anggota'],
+      ['Hafidza Arafah', 'bbze777@gmail.com', 'Sutradara', 'Anggota'],
+      ['Aning Tiyas Triasih', 'aning6651@gmail.com', 'Editor', 'Anggota'],
+      ['Hersita Azmi Candrawati', 'hersitaazmi@gmail.com', 'Artistik', 'Anggota'],
+      ['Fetika Rahmawati', 'fetikara269@gmail.com', 'Wardrobe', 'Anggota'],
+      ['Keiko Marco Valentino Sorongan', 'keikomarco1819@gmail.com', 'DOP', 'Anggota'],
+      ['Zilfia Indi Mecca', 'indiindii636@gmail.com', 'Wardrobe', 'Anggota'],
+      ['Trandwika Hestu Sundoro', 'hestutran@gmail.com', 'Sutradara', 'Anggota'],
+      ['Vico Evrat Anargya', 'vicoeanargya@gmail.com', 'Gaffer', 'Anggota'],
+      ['Moza Zabdiel Ade Setiawan', 'mozazabdiel@gmail.com', 'Runner', 'Anggota'],
+      ['Sherene Nabil Aquila Ramadan', 'yala77206@gmail.com', 'Editor', 'Anggota'],
+      ['Ibrathaillah Abbad Annabhan', 'abad.anaban1@gmail.com', 'Runner', 'Anggota'],
+      ['Afifah Larassati Rahmadani', 'applescat@gmail.com', 'Scriptwriter', 'Bendahara'],
+      ['Syifa Nur Rahmah', 'syifaaiianurrahmah@gmail.com', 'Gaffer', 'Anggota'],
+      ['Nanda Afif Al Fathoni', 'afifgwantengfull@gmail.com', 'Kameramen', 'Anggota'],
+      ['Ghaniyy Akbar Amandhio', 'ghaniyyakbarrramandhio@gmail.com', 'Kameramen', 'Ketua'],
+      ['Nur Asifah', 'nurhaifassifa099@gmail.com', 'Behind the scene', 'Anggota'],
+      ['Bonia Prabandari', 'boniaaprbndri@gmail.com', 'Kameramen', 'Anggota'],
+      ['Cintasya Aulia Irfadillah', 'Cintasyaai@gmail.com', 'Kameramen', 'Anggota'],
+      ['Deri Nugroho', 'derinugrohoo@gmail.com', 'Producer', 'Hiatus (kalo di call paiz balik)'],
+      ['Dwi Sebastian Saputra', 'martiantian510@gmail.com', 'Gaffer', 'Anggota'],
+      ['Aqilla Amor Fadilla Wait', 'kilaace4hee@gmail.com', 'Scriptwriter', 'Bendahara'],
+      ['Alfira Nayla Putri', 'segitigasedotan@gmail.com', 'Kameramen', 'Anggota'],
+      ['Abdullah Shindid Alfarras', 'alfarrasabdullah25@gmail.com', 'Runner', 'Anggota']
+    ];
+
+    const initialUsers = rawMembersList.map((item, idx) => ({
+      id: 'u_' + idx,
+      name: item[0],
+      email: item[1].trim(),
+      divisi: item[2],
+      role: item[3],
+      isAdmin: item[1].trim().toLowerCase() === 'zeravaproduction@gmail.com' || item[3].toLowerCase().includes('ketua') || item[3].toLowerCase().includes('admin'),
+      password: '123456',
+      online: idx % 3 !== 0,
+      bio: `${item[2]} • ${item[3]} di Zerava Production.`,
+      avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(item[0])}&background=2B6E7E&color=fff&bold=true`
+    }));
+
+    const defaultDatabase = {
+      users: initialUsers,
+      nicknames: {}, // { ownerId: { targetId: 'Julukan Kontak HP' } }
+      groups: [
+        {
+          id: 'g_main',
+          name: 'Zerava Production (All Crew)',
+          avatar: 'https://images.unsplash.com/photo-1485846234645-a62644f84728?w=200&auto=format&fit=crop&q=80',
+          members: initialUsers.map(u => u.id)
+        },
+        {
+          id: 'g_flsn',
+          name: 'Tim Inti Produksi Film',
+          avatar: 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=200&auto=format&fit=crop&q=80',
+          members: ['u_0', 'u_1', 'u_4', 'u_12', 'u_22', 'u_27']
+        }
+      ],
+      messages: [
+        { id: 'm1', roomId: 'g_main', senderId: 'u_22', text: 'Teman-teman besok kumpul produksi tepat waktu ya!', time: '09:15', replyTo: null },
+        { id: 'm2', roomId: 'g_main', senderId: 'u_1', text: 'Siap, alat audio sudah aman semua.', time: '09:18', replyTo: null },
+        { id: 'm3', roomId: 'g_main', senderId: 'u_27', text: 'Lighting & gaffer siap merapat!', time: '09:20', replyTo: { senderId: 'u_22', text: 'Teman-teman besok kumpul produksi tepat waktu ya!' } }
+      ],
+      projects: [
+        {
+          id: 'p_1',
+          title: 'Project FLSN: Berderap',
+          desc: 'Film Pendek bertema Pantang Menyerah untuk ajang FLSN 2026',
+          startDate: '2026-11-12',
+          endDate: '2026-11-25',
+          deadline: '2026-11-26',
+          status: 'Sedang Berjalan',
+          thumbnail: 'https://images.unsplash.com/photo-1478760329108-5c3ed9d495a0?w=600&auto=format&fit=crop&q=80',
+          shootListTemplateUrl: 'https://docs.google.com/document/d/1IsnYDQgchgM8gdcXZ_Jou1tkPfxTkQigPbbh1JGszf8/edit?usp=sharing',
+          storyboardTemplateUrl: 'https://canva.link/8f5qoypxe9yuwlz',
+          ideas: [
+            {
+              id: 'id_1',
+              title: 'Bangkit dari Bully Lewat Tari',
+              content: 'Film ini bercerita tentang seorang laki-laki penari yang diremehkan, namun membuktikan kualitasnya di panggung utama.',
+              authorId: 'u_4',
+              likes: ['u_1', 'u_4', 'u_12', 'u_22']
+            }
+          ],
+          naskah: [
+            { id: 'f_1', name: 'Naskah Berderap Final.docx', size: '256 KB', uploaderId: 'u_19', url: 'https://docs.google.com/document/d/1IsnYDQgchgM8gdcXZ_Jou1tkPfxTkQigPbbh1JGszf8/edit?usp=sharing' }
+          ],
+          shootlist: [],
+          storyboard: [],
+          dokumen: []
+        }
+      ],
+      classMaterials: [
+        {
+          id: 'cm_1',
+          title: 'Camera Angle & Komposisi',
+          desc: 'Kamera angle adalah penempatan sudut kamera untuk menghasilkan psikologi dan karakter visual pada adegan film.',
+          thumbnail: 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=600&auto=format&fit=crop&q=80',
+          fileName: 'Modul Dasar Camera Angle.pdf',
+          fileSize: '256 KB',
+          url: 'https://zerava.web.id',
+          uploaderId: 'u_12'
+        }
+      ],
+      notifications: [
+        { id: 'n_1', type: 'chat', title: 'Pesan Grup: Zerava Production', body: 'Dwi Sebastian: Lighting & gaffer siap merapat!', time: '09:20', page: 'chat' },
+        { id: 'n_2', type: 'class', title: 'Materi Baru di Zerava Class', body: 'Keiko Marco menambahkan materi "Camera Angle & Komposisi"', time: '08:30', page: 'class' }
+      ],
+      invites: []
+    };
+
+    let db = JSON.parse(localStorage.getItem('zerava_v2_db')) || defaultDatabase;
+    let currentUser = JSON.parse(localStorage.getItem('zerava_v2_user')) || null;
+    let currentChatFilter = 'all';
+    let currentRoom = { type: 'group', id: 'g_main' };
+    let currentReply = null;
+    let currentProjectId = 'p_1';
+    let currentSubFeature = 'ide';
+    let currentViewedMemberId = null;
+    let currentViewedMaterialId = null;
+    let navStack = ['home'];
+
+    function saveDb() {
+      localStorage.setItem('zerava_v2_db', JSON.stringify(db));
+      
+      // Sync to Supabase if configured
+      if (supabase && currentUser) {
+        syncToSupabase();
+      }
+    }
+
+    // Supabase sync functions
+    async function syncToSupabase() {
+      if (!supabase || !currentUser) return;
+      
+      try {
+        // Sync users
+        const { error: usersError } = await supabase
+          .from('users')
+          .upsert(db.users.map(u => ({
+            id: u.id,
+            name: u.name,
+            email: u.email,
+            divisi: u.divisi,
+            role: u.role,
+            bio: u.bio,
+            avatar: u.avatar,
+            is_admin: u.isAdmin
+          })), { onConflict: 'id' });
+        
+        // Sync projects
+        const { error: projectsError } = await supabase
+          .from('projects')
+          .upsert(db.projects.map(p => ({
+            id: p.id,
+            title: p.title,
+            status: p.status,
+            deadline: p.deadline
+          })), { onConflict: 'id' });
+        
+        // Sync messages
+        const { error: messagesError } = await supabase
+          .from('messages')
+          .upsert(db.messages.map(m => ({
+            id: m.id,
+            room_id: m.roomId,
+            sender_id: m.senderId,
+            text: m.text,
+            timestamp: m.timestamp
+          })), { onConflict: 'id' });
+        
+        if (usersError || projectsError || messagesError) {
+          console.error('Supabase sync error:', { usersError, projectsError, messagesError });
+        } else {
+          console.log('Successfully synced to Supabase');
+        }
+      } catch (error) {
+        console.error('Supabase sync failed:', error);
+      }
+    }
+
+    async function loadFromSupabase() {
+      if (!supabase) return;
+      
+      try {
+        const [users, projects, messages] = await Promise.all([
+          supabase.from('users').select('*'),
+          supabase.from('projects').select('*'),
+          supabase.from('messages').select('*')
+        ]);
+        
+        if (users.data && !users.error) {
+          db.users = users.data.map(u => ({
+            id: u.id,
+            name: u.name,
+            email: u.email,
+            divisi: u.divisi,
+            role: u.role,
+            bio: u.bio,
+            avatar: u.avatar,
+            isAdmin: u.is_admin
+          }));
+        }
+        
+        if (projects.data && !projects.error) {
+          db.projects = projects.data.map(p => ({
+            id: p.id,
+            title: p.title,
+            status: p.status,
+            deadline: p.deadline,
+            naskah: [],
+            shootlist: [],
+            storyboard: [],
+            dokumen: []
+          }));
+        }
+        
+        if (messages.data && !messages.error) {
+          db.messages = messages.data.map(m => ({
+            id: m.id,
+            roomId: m.room_id,
+            senderId: m.sender_id,
+            text: m.text,
+            timestamp: m.timestamp
+          }));
+        }
+        
+        saveDb();
+        console.log('Successfully loaded from Supabase');
+      } catch (error) {
+        console.error('Supabase load failed:', error);
+      }
+    }
+
+    // Cloudflare R2 upload function
+    async function uploadToR2(file, fileName) {
+      if (CLOUDFLARE_R2_ENDPOINT === 'YOUR_R2_ENDPOINT_HERE') {
+        console.warn('Cloudflare R2 not configured. Using base64 fallback.');
+        return null;
+      }
+      
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('key', fileName);
+        
+        const response = await fetch(`${CLOUDFLARE_R2_ENDPOINT}/upload`, {
+          method: 'POST',
+          body: formData
+        });
+        
+        if (!response.ok) throw new Error('R2 upload failed');
+        
+        const data = await response.json();
+        return data.url;
+      } catch (error) {
+        console.error('R2 upload error:', error);
+        return null;
+      }
+    }
+
+    // 3. CENTERED POP-UP (TENGAH LAYAR)
+    function showCenterPopup(title, message, icon = 'fa-circle-check') {
+      document.getElementById('centerPopupTitle').textContent = title;
+      document.getElementById('centerPopupMessage').innerHTML = message;
+      document.getElementById('centerPopupIcon').className = `fa-solid ${icon}`;
+      const overlay = document.getElementById('centerPopupOverlay');
+      overlay.classList.remove('hidden');
+      overlay.classList.add('flex');
+    }
+
+    function closeCenterPopup() {
+      const overlay = document.getElementById('centerPopupOverlay');
+      overlay.classList.add('hidden');
+      overlay.classList.remove('flex');
+    }
+
+    // 4. VALIDASI FILE MAKS 15 MB
+    function checkFileMax15MB(inputEl, fallbackUrlId) {
+      const file = inputEl.files[0];
+      if (!file) return true;
+      if (file.size > MAX_UPLOAD_BYTES) {
+        const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+        inputEl.value = '';
+        showCenterPopup(
+          'Ukuran File Melebihi 15 MB!',
+          `File <b>${file.name}</b> berukuran <b>${sizeMB} MB</b>.<br><br>Batas maksimal upload adalah <b>15 MB</b>. Silakan upload ke Google Drive/Docs lalu tempelkan <b>Link</b>-nya.`,
+          'fa-triangle-exclamation'
+        );
+        if (fallbackUrlId && document.getElementById(fallbackUrlId)) {
+          setTimeout(() => document.getElementById(fallbackUrlId).focus(), 300);
+        }
+        return false;
+      }
+      return true;
+    }
+
+    // 5. FORMAT TANGGAL KALENDER KE INDONESIA
+    function formatIndoDate(dateStr) {
+      if (!dateStr) return '-';
+      const d = new Date(dateStr + 'T00:00:00');
+      if (isNaN(d)) return dateStr;
+      return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+    }
+
+    // 6. NAMA JULUKAN KONTAK HP
+    function getMemberDisplayName(targetId) {
+      const u = db.users.find(x => x.id === targetId);
+      if (!u) return 'Member';
+      if (currentUser && db.nicknames[currentUser.id] && db.nicknames[currentUser.id][targetId]) {
+        return db.nicknames[currentUser.id][targetId];
+      }
+      return u.name;
+    }
+
+    // 7. SISTEM NAVIGASI HALAMAN & HARDWARE BACK BUTTON HP (HISTORY API)
+    function navigateTo(pageId, pushToHistory = true) {
+      document.querySelectorAll('.app-page').forEach(p => p.classList.add('hidden'));
+      const target = document.getElementById(`page-${pageId}`);
+      if (target) target.classList.remove('hidden');
+
+      // Highlight Bottom Navigation
+      const rootTabMap = {
+        'home': 'home',
+        'chat': 'chat', 'chat-room': 'chat', 'create-group': 'chat', 'group-info': 'chat', 'member-profile': 'chat',
+        'production': 'production', 'create-project': 'production', 'project-detail': 'production', 'project-add-item': 'production',
+        'class': 'class', 'create-class': 'class', 'class-detail': 'class',
+        'profile': 'profile', 'admin': 'profile'
+      };
+      const activeRoot = rootTabMap[pageId] || '';
+
+      document.querySelectorAll('.bnav-item').forEach(btn => {
+        btn.className = 'bnav-item flex flex-col items-center justify-center py-1.5 rounded-2xl text-slate-400 dark:text-gray-400 transition';
+      });
+      if (activeRoot && document.getElementById(`bnav-${activeRoot}`)) {
+        document.getElementById(`bnav-${activeRoot}`).className = 'bnav-item flex flex-col items-center justify-center py-1.5 rounded-2xl text-zteal dark:text-zbeige font-extrabold transition';
+      }
+
+      if (pushToHistory) {
+        navStack.push(pageId);
+        window.history.pushState({ pageId }, '', `#${pageId}`);
+      }
+
+      // Render data per halaman
+      if (pageId === 'home') renderHomePage();
+      if (pageId === 'chat') renderChatListPage();
+      if (pageId === 'chat-room') renderChatRoomPage();
+      if (pageId === 'create-group') renderCreateGroupPage();
+      if (pageId === 'group-info') renderGroupInfoPage();
+      if (pageId === 'member-profile') renderMemberProfilePage();
+      if (pageId === 'production') renderProductionList();
+      if (pageId === 'project-detail') renderProjectDetailPage();
+      if (pageId === 'class') renderClassList();
+      if (pageId === 'class-detail') renderClassDetailPage();
+      if (pageId === 'notifications') renderNotificationsPage();
+      if (pageId === 'profile') renderMyProfilePage();
+      if (pageId === 'admin') renderAdminPage();
+
+      window.scrollTo(0, 0);
+    }
+
+    function goBack() {
+      if (navStack.length > 1) {
+        navStack.pop();
+        const prev = navStack[navStack.length - 1];
+        navigateTo(prev, false);
+      } else {
+        navigateTo('home', false);
+      }
+    }
+
+    window.addEventListener('popstate', (event) => {
+      if (event.state && event.state.pageId) {
+        navigateTo(event.state.pageId, false);
+      } else if (currentUser) {
+        goBack();
+      }
+    });
+
+    // 8. INISIALISASI & LOGIN
+    window.addEventListener('DOMContentLoaded', () => {
+      const savedTheme = localStorage.getItem('zerava_theme') || 'dark';
+      if (savedTheme === 'light') document.documentElement.classList.remove('dark');
+      renderAllLogos();
+      registerInlineServiceWorker();
+
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('mode') === 'set-password' && params.get('email')) {
+        openSetPasswordFlow(params.get('email'));
+        return;
+      }
+
+      if (currentUser) {
+        enterMainApp();
+      }
+    });
+
+    function quickLogin(email) {
+      document.getElementById('loginIdentifier').value = email;
+      document.getElementById('loginPassword').value = '123456';
+    }
+
+    function handleLogin(e) {
+      e.preventDefault();
+      const iden = document.getElementById('loginIdentifier').value.trim().toLowerCase();
+      const pass = document.getElementById('loginPassword').value;
+
+      const found = db.users.find(u =>
+        (u.email.toLowerCase() === iden || u.name.toLowerCase().includes(iden)) && u.password === pass
+      );
+
+      if (!found) {
+        showCenterPopup('Login Gagal', 'Email/Nama atau Password tidak ditemukan. Gunakan salah satu email dari 30 anggota Zerava.', 'fa-circle-xmark');
+        return;
+      }
+
+      currentUser = found;
+      localStorage.setItem('zerava_v2_user', JSON.stringify(currentUser));
+      enterMainApp();
+    }
+
+    function enterMainApp() {
+      document.getElementById('loginView').classList.add('hidden');
+      document.getElementById('setPasswordView').classList.add('hidden');
+      document.getElementById('mainAppShell').classList.remove('hidden');
+      renderAllLogos();
+      navigateTo('home');
+    }
+
+    function handleLogout() {
+      currentUser = null;
+      localStorage.removeItem('zerava_v2_user');
+      document.getElementById('mainAppShell').classList.add('hidden');
+      document.getElementById('loginView').classList.remove('hidden');
+      showCenterPopup('Berhasil Logout', 'Kamu telah keluar dari akun Zerava Filmboard.');
+    }
+
+    // 9. RENDER HOME PAGE
+    function renderHomePage() {
+      document.getElementById('homeUserName').textContent = currentUser.name;
+      const grid = document.getElementById('homeWhatsNewGrid');
+      grid.innerHTML = db.classMaterials.slice(0, 4).map(m => `
+        <div onclick="openMaterialDetailPage('${m.id}')" class="cursor-pointer bg-white dark:bg-zcard border border-slate-200 dark:border-zborder rounded-3xl overflow-hidden shadow-sm hover:border-zteal dark:hover:border-zbeige transition">
+          <img src="${m.thumbnail}" class="w-full h-36 object-cover" />
+          <div class="p-4 space-y-1">
+            <h4 class="font-extrabold text-sm text-slate-900 dark:text-white">${m.title}</h4>
+            <p class="text-xs text-slate-500 dark:text-gray-400 line-clamp-2">${m.desc}</p>
+            <div class="pt-2 text-[11px] font-bold text-zteal dark:text-zbeige">Buka Halaman Materi <i class="fa-solid fa-arrow-right ml-1"></i></div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // 10. CHAT, GRUP, & KLIK FOTO PROFIL -> HALAMAN PROFIL MEMBER
+    function setChatTab(tab) {
+      currentChatFilter = tab;
+      ['all', 'group', 'member'].forEach(t => {
+        const el = document.getElementById(`chatFilter-${t}`);
+        el.className = (t === tab)
+          ? 'py-2 rounded-xl font-bold bg-zteal dark:bg-zbeige text-white dark:text-zdark'
+          : 'py-2 rounded-xl font-bold text-slate-500 dark:text-gray-400';
+      });
+      renderChatListPage();
+    }
+
+    function getDmRoomKey(id1, id2) {
+      return 'dm_' + [id1, id2].sort().join('_');
+    }
+
+    function renderChatListPage() {
+      const q = (document.getElementById('chatSearchInput')?.value || '').toLowerCase();
+      const container = document.getElementById('chatDirectoryList');
+      let html = '';
+
+      if (currentChatFilter === 'all' || currentChatFilter === 'group') {
+        db.groups.forEach(g => {
+          if (q && !g.name.toLowerCase().includes(q)) return;
+          const msgs = db.messages.filter(m => m.roomId === g.id);
+          const last = msgs[msgs.length - 1];
+          html += `
+            <div class="p-4 flex items-center justify-between gap-3 hover:bg-slate-50 dark:hover:bg-white/5 transition">
+              <div onclick="openChatRoom('group', '${g.id}')" class="flex items-center gap-3.5 flex-1 min-w-0 cursor-pointer">
+                <img src="${g.avatar}" class="w-12 h-12 rounded-2xl object-cover shrink-0" />
+                <div class="truncate">
+                  <div class="font-extrabold text-xs text-slate-900 dark:text-white truncate">${g.name}</div>
+                  <div class="text-[11px] text-slate-500 dark:text-gray-400 truncate mt-0.5">
+                    ${last ? getMemberDisplayName(last.senderId) + ': ' + last.text : 'Klik untuk mulai mengobrol'}
+                  </div>
+                </div>
+              </div>
+              <span class="text-[10px] px-2.5 py-1 rounded-full bg-slate-100 dark:bg-zdark text-slate-500 dark:text-gray-400 shrink-0">${g.members.length} anggota</span>
+            </div>
+          `;
+        });
+      }
+
+      if (currentChatFilter === 'all' || currentChatFilter === 'member') {
+        db.users.filter(u => u.id !== currentUser.id).forEach(u => {
+          const disp = getMemberDisplayName(u.id);
+          if (q && !disp.toLowerCase().includes(q) && !u.name.toLowerCase().includes(q) && !u.divisi.toLowerCase().includes(q)) return;
+          const hasNick = db.nicknames[currentUser.id]?.[u.id];
+
+          html += `
+            <div class="p-4 flex items-center justify-between gap-3 hover:bg-slate-50 dark:hover:bg-white/5 transition">
+              <!-- KLIK FOTO PROFIL LANGSUNG KE HALAMAN PROFILNYA (SESUAI REVISI #4) -->
+              <div class="flex items-center gap-3.5 flex-1 min-w-0">
+                <img onclick="openMemberProfilePage('${u.id}')" src="${u.avatar}" title="Klik untuk buka Halaman Profil ${u.name}"
+                  class="w-12 h-12 rounded-2xl object-cover shrink-0 cursor-pointer ring-2 ring-transparent hover:ring-zteal dark:hover:ring-zbeige transition" />
+                <div onclick="openChatRoom('dm', '${u.id}')" class="truncate flex-1 cursor-pointer">
+                  <div class="font-extrabold text-xs text-slate-900 dark:text-white truncate">
+                    ${disp} ${hasNick ? `<span class="text-[10px] font-normal text-slate-400">(${u.name})</span>` : ''}
+                  </div>
+                  <div class="text-[11px] text-zteal dark:text-zbeige font-semibold">${u.divisi} • ${u.role}</div>
+                </div>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <button onclick="openMemberProfilePage('${u.id}')" class="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-zdark text-[11px] font-bold text-slate-600 dark:text-gray-300">
+                  Profil
+                </button>
+                <button onclick="openChatRoom('dm', '${u.id}')" class="px-3 py-1.5 rounded-xl bg-zteal dark:bg-zbeige text-white dark:text-zdark text-[11px] font-bold">
+                  Chat
+                </button>
+              </div>
+            </div>
+          `;
+        });
+      }
+
+      container.innerHTML = html || `<div class="p-8 text-center text-xs text-slate-400">Data tidak ditemukan.</div>`;
+    }
+
+    function openChatRoom(type, id) {
+      currentRoom = { type, id };
+      clearChatReply();
+      navigateTo('chat-room');
+    }
+
+    function renderChatRoomPage() {
+      const header = document.getElementById('chatRoomHeader');
+      const box = document.getElementById('chatRoomMessages');
+      let roomKey = '';
+
+      if (currentRoom.type === 'group') {
+        const g = db.groups.find(x => x.id === currentRoom.id) || db.groups[0];
+        roomKey = g.id;
+        header.innerHTML = `
+          <div class="flex items-center gap-3">
+            <button onclick="goBack()" class="w-8 h-8 rounded-xl bg-slate-200/70 dark:bg-zdark flex items-center justify-center text-xs">
+              <i class="fa-solid fa-arrow-left"></i>
+            </button>
+            <img onclick="navigateTo('group-info')" src="${g.avatar}" class="w-10 h-10 rounded-2xl object-cover cursor-pointer" />
+            <div onclick="navigateTo('group-info')" class="cursor-pointer">
+              <div class="font-extrabold text-xs text-slate-900 dark:text-white">${g.name}</div>
+              <div class="text-[10px] text-emerald-500 font-semibold">${g.members.length} Anggota • Ketuk untuk Info Grup</div>
+            </div>
+          </div>
+          <button onclick="navigateTo('group-info')" class="px-3 py-1.5 rounded-xl bg-slate-200/70 dark:bg-zdark text-xs font-bold text-zteal dark:text-zbeige">
+            Info Grup
+          </button>
+        `;
+      } else {
+        const u = db.users.find(x => x.id === currentRoom.id);
+        roomKey = getDmRoomKey(currentUser.id, u.id);
+        header.innerHTML = `
+          <div class="flex items-center gap-3">
+            <button onclick="goBack()" class="w-8 h-8 rounded-xl bg-slate-200/70 dark:bg-zdark flex items-center justify-center text-xs">
+              <i class="fa-solid fa-arrow-left"></i>
+            </button>
+            <!-- KLIK FOTO PROFIL LANGSUNG KE HALAMAN PROFIL MEMBER -->
+            <img onclick="openMemberProfilePage('${u.id}')" src="${u.avatar}" class="w-10 h-10 rounded-2xl object-cover cursor-pointer" />
+            <div onclick="openMemberProfilePage('${u.id}')" class="cursor-pointer">
+              <div class="font-extrabold text-xs text-slate-900 dark:text-white">${getMemberDisplayName(u.id)}</div>
+              <div class="text-[10px] text-zteal dark:text-zbeige font-semibold">${u.divisi} • Ketuk untuk lihat halaman profil</div>
+            </div>
+          </div>
+          <button onclick="openMemberProfilePage('${u.id}')" class="px-3 py-1.5 rounded-xl bg-slate-200/70 dark:bg-zdark text-xs font-bold text-zteal dark:text-zbeige">
+            Buka Profil
+          </button>
+        `;
+      }
+
+      const msgs = db.messages.filter(m => m.roomId === roomKey);
+      box.innerHTML = msgs.map(m => {
+        const isMe = m.senderId === currentUser.id;
+        const sender = db.users.find(u => u.id === m.senderId);
+        return `
+          <div class="flex items-end gap-2 ${isMe ? 'justify-end' : 'justify-start'}">
+            ${!isMe ? `
+              <img onclick="openMemberProfilePage('${m.senderId}')" src="${sender?.avatar || ''}"
+                title="Klik untuk buka profil ${sender?.name}"
+                class="w-8 h-8 rounded-xl object-cover cursor-pointer shrink-0 hover:scale-105 transition" />
+            ` : ''}
+            <div class="max-w-xs sm:max-w-md rounded-2xl p-3 ${isMe ? 'bg-zteal dark:bg-zbeige text-white dark:text-zdark rounded-br-none' : 'bg-white dark:bg-zcard border border-slate-200 dark:border-zborder text-slate-900 dark:text-white rounded-bl-none'}">
+              ${!isMe ? `
+                <div onclick="openMemberProfilePage('${m.senderId}')" class="text-[11px] font-extrabold text-zteal dark:text-zpurple cursor-pointer hover:underline mb-0.5">
+                  ${getMemberDisplayName(m.senderId)}
+                </div>
+              ` : ''}
+              ${m.replyTo ? `
+                <div class="p-2 mb-1.5 rounded-xl bg-black/10 dark:bg-black/20 text-[10px] border-l-2 border-zpurple">
+                  <div class="font-bold">Membalas ${getMemberDisplayName(m.replyTo.senderId)}</div>
+                  <div class="truncate opacity-80">${m.replyTo.text}</div>
+                </div>
+              ` : ''}
+              <p class="text-xs leading-relaxed">${m.text}</p>
+              <div class="flex items-center justify-end gap-2 mt-1 text-[10px] opacity-70">
+                <span>${m.time}</span>
+                <button onclick="setChatReply('${m.id}')"><i class="fa-solid fa-reply"></i></button>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('') || `<div class="text-center text-xs text-slate-400 py-10">Belum ada obrolan. Kirim pesan pertama!</div>`;
+
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function setChatReply(msgId) {
+      const m = db.messages.find(x => x.id === msgId);
+      if (!m) return;
+      currentReply = { senderId: m.senderId, text: m.text };
+      document.getElementById('chatReplySender').textContent = getMemberDisplayName(m.senderId);
+      document.getElementById('chatReplyText').textContent = m.text;
+      document.getElementById('chatReplyBanner').classList.remove('hidden');
+      document.getElementById('chatReplyBanner').classList.add('flex');
+      document.getElementById('chatRoomInput').focus();
+    }
+
+    function clearChatReply() {
+      currentReply = null;
+      const b = document.getElementById('chatReplyBanner');
+      if (b) { b.classList.add('hidden'); b.classList.remove('flex'); }
+    }
+
+    function handleSendChatMessage(e) {
+      e.preventDefault();
+      const inp = document.getElementById('chatRoomInput');
+      const text = inp.value.trim();
+      if (!text) return;
+
+      const roomKey = currentRoom.type === 'group' ? currentRoom.id : getDmRoomKey(currentUser.id, currentRoom.id);
+      const time = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+
+      db.messages.push({
+        id: 'm_' + Date.now(),
+        roomId: roomKey,
+        senderId: currentUser.id,
+        text,
+        time,
+        replyTo: currentReply
+      });
+
+      inp.value = '';
+      clearChatReply();
+      saveDb();
+      renderChatRoomPage();
+    }
+
+    // 11. HALAMAN PROFIL MEMBER LAIN & JULUKAN KONTAK HP (HALAMAN TERSENDIRI)
+    function openMemberProfilePage(userId) {
+      currentViewedMemberId = userId;
+      navigateTo('member-profile');
+    }
+
+    function renderMemberProfilePage() {
+      const u = db.users.find(x => x.id === currentViewedMemberId);
+      if (!u) return;
+      const currentNick = db.nicknames[currentUser.id]?.[u.id] || '';
+
+      document.getElementById('memberProfilePageContent').innerHTML = `
+        <div class="flex flex-col sm:flex-row items-center gap-5 pb-5 border-b border-slate-200 dark:border-zborder">
+          <img src="${u.avatar}" class="w-24 h-24 rounded-3xl object-cover border-2 border-zteal dark:border-zbeige" />
+          <div class="text-center sm:text-left space-y-1 flex-1">
+            <span class="px-3 py-0.5 rounded-full bg-zpurple/20 text-zteal dark:text-zbeige text-[11px] font-bold">${u.divisi} • ${u.role}</span>
+            <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">${u.name}</h2>
+            <p class="text-xs text-slate-500 dark:text-gray-400">${u.email}</p>
+          </div>
+          <button onclick="openChatRoom('dm', '${u.id}')" class="px-5 py-3 rounded-2xl bg-zteal dark:bg-zbeige text-white dark:text-zdark font-extrabold text-xs">
+            <i class="fa-regular fa-paper-plane mr-1.5"></i> Kirim Pesan DM
+          </button>
+        </div>
+
+        <div class="space-y-1">
+          <div class="text-xs font-bold text-slate-400">About Member</div>
+          <p class="text-xs text-slate-700 dark:text-gray-200 leading-relaxed">${u.bio}</p>
+        </div>
+
+        <!-- Form Nama Julukan (Hanya terlihat seperti Kontak HP milikmu) -->
+        <div class="p-5 rounded-2xl bg-slate-50 dark:bg-zdark border border-slate-200 dark:border-zborder space-y-3">
+          <div>
+            <h3 class="text-xs font-extrabold text-slate-900 dark:text-white">
+              <i class="fa-solid fa-address-book text-zteal dark:text-zbeige mr-1.5"></i> Atur Nama Julukan (Seperti Kontak HP)
+            </h3>
+            <p class="text-[11px] text-slate-500 dark:text-gray-400">Nama julukan ini hanya terlihat di akunmu sendiri.</p>
+          </div>
+          <div class="flex gap-2">
+            <input id="memberPageNickInput" type="text" value="${currentNick}" placeholder="Contoh: Bastian / Ikyyy"
+              class="flex-1 px-4 py-2.5 rounded-xl bg-white dark:bg-zcard border border-slate-200 dark:border-zborder text-xs text-slate-900 dark:text-white" />
+            <button onclick="handleSaveMemberNickname('${u.id}')" class="px-5 py-2.5 rounded-xl bg-zteal dark:bg-zbeige text-white dark:text-zdark font-extrabold text-xs">
+              Simpan Julukan
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    function handleSaveMemberNickname(targetId) {
+      const val = document.getElementById('memberPageNickInput').value.trim();
+      if (!db.nicknames[currentUser.id]) db.nicknames[currentUser.id] = {};
+      if (val) {
+        db.nicknames[currentUser.id][targetId] = val;
+        showCenterPopup('Julukan Disimpan', `Nama julukan berhasil diubah menjadi <b>"${val}"</b> di kontakmu.`);
+      } else {
+        delete db.nicknames[currentUser.id][targetId];
+        showCenterPopup('Julukan Dihapus', 'Kembali menggunakan nama asli member.');
+      }
+      saveDb();
+      renderMemberProfilePage();
+    }
+
+    // 12. HALAMAN BUAT GRUP & HALAMAN INFO GRUP
+    function renderCreateGroupPage() {
+      const list = document.getElementById('createGroupMembersList');
+      list.innerHTML = db.users.filter(u => u.id !== currentUser.id).map(u => `
+        <label class="flex items-center justify-between p-2.5 hover:bg-white/5 cursor-pointer">
+          <div class="flex items-center gap-3">
+            <img src="${u.avatar}" class="w-8 h-8 rounded-xl object-cover" />
+            <div>
+              <div class="text-xs font-bold text-slate-900 dark:text-white">${getMemberDisplayName(u.id)}</div>
+              <div class="text-[10px] text-slate-400">${u.divisi}</div>
+            </div>
+          </div>
+          <input type="checkbox" value="${u.id}" checked class="new-grp-cb rounded text-zteal dark:text-zbeige" />
+        </label>
+      `).join('');
+    }
+
+    function handleSaveNewGroup(e) {
+      e.preventDefault();
+      const name = document.getElementById('createGroupName').value.trim();
+      const photoIn = document.getElementById('createGroupPhoto');
+      if (photoIn.files[0] && !checkFileMax15MB(photoIn)) return;
+
+      const members = Array.from(document.querySelectorAll('.new-grp-cb:checked')).map(c => c.value);
+      members.unshift(currentUser.id);
+
+      const finish = (avatarUrl) => {
+        const newGrp = {
+          id: 'g_' + Date.now(),
+          name,
+          avatar: avatarUrl || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=200&auto=format&fit=crop&q=80',
+          members
+        };
+        db.groups.push(newGrp);
+        saveDb();
+        openChatRoom('group', newGrp.id);
+        showCenterPopup('Grup Berhasil Dibuat', `Grup <b>${name}</b> telah siap digunakan.`);
+      };
+
+      if (photoIn.files[0]) {
+        const r = new FileReader();
+        r.onload = () => finish(r.result);
+        r.readAsDataURL(photoIn.files[0]);
+      } else {
+        finish(null);
+      }
+    }
+
+    function renderGroupInfoPage() {
+      const g = db.groups.find(x => x.id === currentRoom.id) || db.groups[0];
+      const box = document.getElementById('groupInfoPageContainer');
+
+      box.innerHTML = `
+        <div class="flex flex-col sm:flex-row items-center gap-4 pb-5 border-b border-slate-200 dark:border-zborder">
+          <img src="${g.avatar}" class="w-20 h-20 rounded-3xl object-cover border border-zbeige" />
+          <div class="text-center sm:text-left flex-1">
+            <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">${g.name}</h2>
+            <p class="text-xs text-slate-500 dark:text-gray-400">${g.members.length} Member di dalam grup ini</p>
+            <label class="inline-block mt-2 text-xs font-bold text-zteal dark:text-zbeige underline cursor-pointer">
+              Ganti Foto Profil Grup
+              <input type="file" accept="image/*" class="hidden" onchange="handleChangeGroupAvatar(event, '${g.id}')" />
+            </label>
+          </div>
+        </div>
+
+        <div class="space-y-2">
+          <h3 class="text-xs font-extrabold uppercase tracking-wider text-slate-400">Daftar Anggota Grup (Klik Foto/Nama untuk ke Halaman Profilnya)</h3>
+          <div class="divide-y divide-slate-100 dark:divide-zborder">
+            ${g.members.map(uid => {
+              const u = db.users.find(x => x.id === uid);
+              if (!u) return '';
+              return `
+                <div onclick="openMemberProfilePage('${u.id}')" class="py-3 flex items-center justify-between cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5 px-2 rounded-xl">
+                  <div class="flex items-center gap-3">
+                    <img src="${u.avatar}" class="w-10 h-10 rounded-2xl object-cover" />
+                    <div>
+                      <div class="text-xs font-bold text-slate-900 dark:text-white">${getMemberDisplayName(u.id)}</div>
+                      <div class="text-[11px] text-slate-400">${u.divisi} • ${u.role}</div>
+                    </div>
+                  </div>
+                  <span class="text-xs font-bold text-zteal dark:text-zbeige">Lihat Profil <i class="fa-solid fa-chevron-right ml-1 text-[10px]"></i></span>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    function handleChangeGroupAvatar(e, groupId) {
+      const f = e.target.files[0];
+      if (!f || !checkFileMax15MB(e.target)) return;
+      const r = new FileReader();
+      r.onload = () => {
+        const g = db.groups.find(x => x.id === groupId);
+        if (g) { g.avatar = r.result; saveDb(); renderGroupInfoPage(); }
+      };
+      r.readAsDataURL(f);
+    }
+
+    // 13. PRODUCTION FILM & TANGGAL KALENDER RESMI
+    function renderProductionList() {
+      const q = (document.getElementById('projSearchInput')?.value || '').toLowerCase();
+      const grid = document.getElementById('productionProjectsGrid');
+
+      grid.innerHTML = db.projects.filter(p => p.title.toLowerCase().includes(q)).map(p => `
+        <div onclick="openProjectDetailPage('${p.id}')" class="cursor-pointer bg-white dark:bg-zcard border border-slate-200 dark:border-zborder rounded-3xl overflow-hidden shadow-sm hover:border-zteal dark:hover:border-zbeige transition">
+          <div class="h-44 relative">
+            <img src="${p.thumbnail}" class="w-full h-full object-cover" />
+            <span class="absolute top-3 right-3 px-3 py-1 rounded-full text-[11px] font-extrabold bg-zteal dark:bg-zbeige text-white dark:text-zdark">
+              ${p.status}
+            </span>
+          </div>
+          <div class="p-5 space-y-3">
+            <div>
+              <h3 class="font-extrabold text-base text-slate-900 dark:text-white">${p.title}</h3>
+              <p class="text-xs text-slate-500 dark:text-gray-400 line-clamp-2 mt-1">${p.desc}</p>
+            </div>
+            <div class="pt-3 border-t border-slate-100 dark:border-zborder text-xs space-y-1">
+              <div class="flex justify-between">
+                <span class="text-slate-400">Tanggal Produksi:</span>
+                <span class="font-bold text-slate-800 dark:text-white">${formatIndoDate(p.startDate)} – ${formatIndoDate(p.endDate)}</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-400">Tenggat Pengumpulan:</span>
+                <span class="font-bold text-zteal dark:text-zbeige">${formatIndoDate(p.deadline)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function handleSaveNewProject(e) {
+      e.preventDefault();
+      const thumbIn = document.getElementById('projThumbIn');
+      if (thumbIn.files[0] && !checkFileMax15MB(thumbIn)) return;
+
+      const save = (thumbUrl) => {
+        const newProj = {
+          id: 'p_' + Date.now(),
+          title: document.getElementById('projTitleIn').value.trim(),
+          desc: document.getElementById('projDescIn').value.trim(),
+          startDate: document.getElementById('projStartDateIn').value,
+          endDate: document.getElementById('projEndDateIn').value,
+          deadline: document.getElementById('projDeadlineIn').value,
+          status: 'Sedang Berjalan',
+          thumbnail: thumbUrl || 'https://images.unsplash.com/photo-1485846234645-a62644f84728?w=600&auto=format&fit=crop&q=80',
+          shootListTemplateUrl: 'https://docs.google.com/document/d/1IsnYDQgchgM8gdcXZ_Jou1tkPfxTkQigPbbh1JGszf8/edit?usp=sharing',
+          storyboardTemplateUrl: 'https://canva.link/8f5qoypxe9yuwlz',
+          ideas: [], naskah: [], shootlist: [], storyboard: [], dokumen: []
+        };
+        db.projects.unshift(newProj);
+        saveDb();
+        openProjectDetailPage(newProj.id);
+        showCenterPopup('Project Ditambahkan', `Project <b>${newProj.title}</b> berhasil dibuat.`);
+      };
+
+      if (thumbIn.files[0]) {
+        const r = new FileReader();
+        r.onload = () => save(r.result);
+        r.readAsDataURL(thumbIn.files[0]);
+      } else {
+        save(null);
+      }
+    }
+
+    function openProjectDetailPage(projId) {
+      currentProjectId = projId;
+      navigateTo('project-detail');
+    }
+
+    function renderProjectDetailPage() {
+      const p = db.projects.find(x => x.id === currentProjectId);
+      if (!p) return;
+
+      document.getElementById('projectDetailTopCard').innerHTML = `
+        <div class="flex flex-col md:flex-row gap-5 items-start md:items-center justify-between">
+          <div class="flex items-center gap-4">
+            <img src="${p.thumbnail}" class="w-20 h-20 rounded-2xl object-cover shrink-0" />
+            <div>
+              <span class="px-2.5 py-0.5 rounded-full bg-zteal/15 dark:bg-zbeige/20 text-zteal dark:text-zbeige text-[11px] font-bold">${p.status}</span>
+              <h2 class="text-lg font-extrabold text-slate-900 dark:text-white mt-1">${p.title}</h2>
+              <p class="text-xs text-slate-500 dark:text-gray-400">${p.desc}</p>
+            </div>
+          </div>
+
+          <!-- Ubah Tanggal dengan Input Date Resmi (Tidak Bisa Diisi Huruf Random) -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 w-full md:w-auto bg-slate-50 dark:bg-zdark p-3.5 rounded-2xl border border-slate-200 dark:border-zborder text-xs">
+            <div>
+              <label class="block text-[10px] text-slate-400">Mulai Produksi</label>
+              <input type="date" value="${p.startDate}" onchange="updateProjectDateField('${p.id}', 'startDate', this.value)"
+                class="mt-1 px-2 py-1 rounded-lg bg-white dark:bg-zcard border border-slate-200 dark:border-zborder text-xs font-bold" />
+            </div>
+            <div>
+              <label class="block text-[10px] text-slate-400">Selesai Produksi</label>
+              <input type="date" value="${p.endDate}" onchange="updateProjectDateField('${p.id}', 'endDate', this.value)"
+                class="mt-1 px-2 py-1 rounded-lg bg-white dark:bg-zcard border border-slate-200 dark:border-zborder text-xs font-bold" />
+            </div>
+            <div>
+              <label class="block text-[10px] text-slate-400">Deadline</label>
+              <input type="date" value="${p.deadline}" onchange="updateProjectDateField('${p.id}', 'deadline', this.value)"
+                class="mt-1 px-2 py-1 rounded-lg bg-white dark:bg-zcard border border-slate-200 dark:border-zborder text-xs font-bold text-zteal dark:text-zbeige" />
+            </div>
+          </div>
+        </div>
+      `;
+
+      selectProjSubFeature(currentSubFeature);
+    }
+
+    function updateProjectDateField(projId, field, value) {
+      const p = db.projects.find(x => x.id === projId);
+      if (!p || !value) return;
+      p[field] = value;
+      saveDb();
+      showCenterPopup('Tanggal Diperbarui', `Jadwal berhasil diubah menjadi <b>${formatIndoDate(value)}</b>.`);
+    }
+
+    function selectProjSubFeature(feat) {
+      currentSubFeature = feat;
+      ['ide', 'naskah', 'shootlist', 'storyboard', 'dokumen'].forEach(f => {
+        const btn = document.getElementById(`subFeat-${f}`);
+        btn.className = (f === feat)
+          ? 'px-4 py-2.5 rounded-2xl text-xs font-extrabold bg-zteal dark:bg-zbeige text-white dark:text-zdark whitespace-nowrap'
+          : 'px-4 py-2.5 rounded-2xl text-xs font-extrabold bg-white dark:bg-zcard border border-slate-200 dark:border-zborder text-slate-500 dark:text-gray-400 whitespace-nowrap';
+      });
+
+      const p = db.projects.find(x => x.id === currentProjectId);
+      const body = document.getElementById('projectSubFeatureBody');
+
+      if (feat === 'ide') {
+        body.innerHTML = `
+          <div class="space-y-4">
+            <div class="flex items-center justify-between">
+              <div>
+                <h3 class="font-extrabold text-sm text-slate-900 dark:text-white">1. Ide Cerita & Voting</h3>
+                <p class="text-xs text-slate-500 dark:text-gray-400">Berikan Like untuk memilih ide cerita yang akan diproduksi</p>
+              </div>
+              <button onclick="openProjectAddFormPage('ide')" class="px-4 py-2 rounded-xl bg-zteal dark:bg-zbeige text-white dark:text-zdark font-extrabold text-xs">
+                <i class="fa-solid fa-plus mr-1"></i> Tambah Ide
+              </button>
+            </div>
+            <div class="space-y-3">
+              ${p.ideas.map(idObj => {
+                const liked = idObj.likes.includes(currentUser.id);
+                return `
+                  <div class="p-4 rounded-2xl bg-slate-50 dark:bg-zdark border border-slate-200 dark:border-zborder flex items-start justify-between gap-4">
+                    <div class="space-y-1">
+                      <h4 class="font-bold text-sm text-slate-900 dark:text-white">${idObj.title}</h4>
+                      <p class="text-xs text-slate-600 dark:text-gray-300 leading-relaxed">${idObj.content}</p>
+                      <div class="text-[11px] text-slate-400 pt-1">Oleh: ${getMemberDisplayName(idObj.authorId)}</div>
+                    </div>
+                    <button onclick="toggleProjectIdeaLike('${idObj.id}')" class="px-3.5 py-2 rounded-xl border ${liked ? 'bg-red-500/20 border-red-500 text-red-500' : 'border-slate-300 dark:border-zborder text-slate-500'} font-bold text-xs flex items-center gap-1.5">
+                      <i class="fa-solid fa-heart"></i> <span>${idObj.likes.length}</span>
+                    </button>
+                  </div>
+                `;
+              }).join('') || '<div class="text-xs text-slate-400 text-center py-6">Belum ada ide yang ditambahkan.</div>'}
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      const labels = {
+        naskah: { title: '2. Naskah Film', btn: 'Tambah Naskah', templateHtml: '' },
+        shootlist: {
+          title: '3. Shoot List',
+          btn: 'Upload Shoot List',
+          templateHtml: `
+            <div class="p-4 rounded-2xl bg-zteal/10 dark:bg-zpurple/20 border border-zteal/30 dark:border-zpurple/40 flex items-center justify-between gap-3">
+              <div>
+                <div class="text-xs font-extrabold text-slate-900 dark:text-white">Template Shoot List Resmi (Google Docs)</div>
+                <div class="text-[11px] text-slate-500 dark:text-gray-300">Buka dokumen template ini, isi shoot list, lalu upload hasilnya.</div>
+              </div>
+              <a href="${p.shootListTemplateUrl}" target="_blank" class="px-4 py-2 rounded-xl bg-zteal dark:bg-zbeige text-white dark:text-zdark font-extrabold text-xs shrink-0">
+                Buka Template Docs
+              </a>
+            </div>
+          `
+        },
+        storyboard: {
+          title: '4. Story Board',
+          btn: 'Upload Story Board',
+          templateHtml: `
+            <div class="p-4 rounded-2xl bg-zteal/10 dark:bg-zpurple/20 border border-zteal/30 dark:border-zpurple/40 flex items-center justify-between gap-3">
+              <div>
+                <div class="text-xs font-extrabold text-slate-900 dark:text-white">Template Story Board Resmi (Canva Link)</div>
+                <div class="text-[11px] text-slate-500 dark:text-gray-300">${p.storyboardTemplateUrl}</div>
+              </div>
+              <a href="${p.storyboardTemplateUrl}" target="_blank" class="px-4 py-2 rounded-xl bg-zteal dark:bg-zbeige text-white dark:text-zdark font-extrabold text-xs shrink-0">
+                Buka Template Canva
+              </a>
+            </div>
+          `
+        },
+        dokumen: { title: '5. Dokumen Penting Syuting', btn: 'Tambah Dokumen', templateHtml: '' }
+      }[feat];
+
+      const list = p[feat] || [];
+
+      body.innerHTML = `
+        <div class="space-y-4">
+          <div class="flex items-center justify-between">
+            <h3 class="font-extrabold text-sm text-slate-900 dark:text-white">${labels.title}</h3>
+            <button onclick="openProjectAddFormPage('${feat}')" class="px-4 py-2 rounded-xl bg-zteal dark:bg-zbeige text-white dark:text-zdark font-extrabold text-xs">
+              <i class="fa-solid fa-plus mr-1"></i> ${labels.btn}
+            </button>
+          </div>
+          ${labels.templateHtml}
+          <div class="space-y-2.5">
+            ${list.map(item => `
+              <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-zdark border border-slate-200 dark:border-zborder flex items-center justify-between gap-3">
+                <div class="truncate">
+                  <div class="text-xs font-bold text-slate-900 dark:text-white truncate">${item.name} <span class="text-slate-400 font-normal">(${item.size})</span></div>
+                  <div class="text-[11px] text-slate-400">Di-upload oleh ${getMemberDisplayName(item.uploaderId)}</div>
+                </div>
+                <a href="${item.url}" target="_blank" download="${item.name}" class="px-3.5 py-2 rounded-xl bg-white dark:bg-zcard border border-slate-200 dark:border-zborder text-xs font-bold text-zteal dark:text-zbeige shrink-0">
+                  Buka File
+                </a>
+              </div>
+            `).join('') || '<div class="text-xs text-slate-400 text-center py-6">Belum ada file yang di-upload.</div>'}
+          </div>
+        </div>
+      `;
+    }
+
+    function toggleProjectIdeaLike(ideaId) {
+      const p = db.projects.find(x => x.id === currentProjectId);
+      const idea = p?.ideas.find(i => i.id === ideaId);
+      if (!idea) return;
+      if (idea.likes.includes(currentUser.id)) {
+        idea.likes = idea.likes.filter(id => id !== currentUser.id);
+      } else {
+        idea.likes.push(currentUser.id);
+      }
+      saveDb();
+      selectProjSubFeature('ide');
+    }
+
+    // HALAMAN PENUH UNTUK TAMBAH IDE ATAU UPLOAD FILE PROJECT
+    function openProjectAddFormPage(type) {
+      const box = document.getElementById('projectAddItemFormBox');
+      if (type === 'ide') {
+        box.innerHTML = `
+          <form onsubmit="handleSaveProjectIdea(event)" class="space-y-4">
+            <h2 class="text-lg font-extrabold text-slate-900 dark:text-white">Tambah Ide Cerita Baru</h2>
+            <div>
+              <label class="block text-xs font-bold mb-1">Judul Ide *</label>
+              <input id="newIdeaTitle" type="text" required placeholder="Masukkan judul ide cerita"
+                class="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-zdark border border-slate-200 dark:border-zborder text-xs" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold mb-1">Garis Besar Ide Cerita *</label>
+              <textarea id="newIdeaBody" rows="4" required placeholder="Tuliskan konsep dan garis besar cerita..."
+                class="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-zdark border border-slate-200 dark:border-zborder text-xs"></textarea>
+            </div>
+            <button type="submit" class="w-full py-3 rounded-2xl bg-zteal dark:bg-zbeige text-white dark:text-zdark font-extrabold text-xs">
+              Simpan Ide ke Project
+            </button>
+          </form>
+        `;
+      } else {
+        box.innerHTML = `
+          <form onsubmit="handleSaveProjectFile(event, '${type}')" class="space-y-4">
+            <h2 class="text-lg font-extrabold text-slate-900 dark:text-white">Upload ${type.toUpperCase()}</h2>
+            <p class="text-xs text-slate-500 dark:text-gray-400">Pilih file dari perangkat (Maksimal 15 MB) atau tempelkan Link Google Drive/Docs/Canva.</p>
+            <div>
+              <label class="block text-xs font-bold mb-1">Nama Dokumen / File *</label>
+              <input id="newProjFileName" type="text" required placeholder="Contoh: ${type} Revisi 1"
+                class="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-zdark border border-slate-200 dark:border-zborder text-xs" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold mb-1">Pilih File (Maks 15 MB)</label>
+              <input id="newProjFileBlob" type="file" onchange="checkFileMax15MB(this, 'newProjFileUrl')"
+                class="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:bg-zteal dark:file:bg-zbeige file:text-white dark:file:text-zdark file:font-bold" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold mb-1">Atau Link Dokumen (Wajib jika file > 15 MB)</label>
+              <input id="newProjFileUrl" type="url" placeholder="https://docs.google.com/..."
+                class="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-zdark border border-slate-200 dark:border-zborder text-xs" />
+            </div>
+            <button type="submit" class="w-full py-3 rounded-2xl bg-zteal dark:bg-zbeige text-white dark:text-zdark font-extrabold text-xs">
+              Upload Sekarang
+            </button>
+          </form>
+        `;
+      }
+      navigateTo('project-add-item');
+    }
+
+    function handleSaveProjectIdea(e) {
+      e.preventDefault();
+      const p = db.projects.find(x => x.id === currentProjectId);
+      p.ideas.unshift({
+        id: 'id_' + Date.now(),
+        title: document.getElementById('newIdeaTitle').value.trim(),
+        content: document.getElementById('newIdeaBody').value.trim(),
+        authorId: currentUser.id,
+        likes: [currentUser.id]
+      });
+      saveDb();
+      goBack();
+      showCenterPopup('Ide Berhasil Disimpan', 'Ide ceritamu sudah tampil dan siap di-vote oleh member lain.');
+    }
+
+    function handleSaveProjectFile(e, featKey) {
+      e.preventDefault();
+      const p = db.projects.find(x => x.id === currentProjectId);
+      const name = document.getElementById('newProjFileName').value.trim();
+      const fileIn = document.getElementById('newProjFileBlob');
+      const linkIn = document.getElementById('newProjFileUrl').value.trim();
+
+      if (fileIn.files[0] && !checkFileMax15MB(fileIn, 'newProjFileUrl')) return;
+      if (!fileIn.files[0] && !linkIn) {
+        showCenterPopup('File / Link Kosong', 'Silakan pilih file (maks 15 MB) atau isi kolom Link.', 'fa-circle-exclamation');
+        return;
+      }
+
+      const f = fileIn.files[0];
+      p[featKey].unshift({
+        id: 'f_' + Date.now(),
+        name: f ? `${name} (${f.name})` : name,
+        size: f ? Math.round(f.size / 1024) + ' KB' : 'Link',
+        uploaderId: currentUser.id,
+        url: f ? URL.createObjectURL(f) : linkIn
+      });
+      saveDb();
+      goBack();
+      showCenterPopup('Berhasil Di-upload', `Dokumen <b>${name}</b> telah tersimpan.`);
+    }
+
+    // 14. ZERAVA CLASS & HALAMAN DETAIL MATERI TERSENDIRI
+    function renderClassList() {
+      const q = (document.getElementById('classSearchIn')?.value || '').toLowerCase();
+      const grid = document.getElementById('classGridContainer');
+
+      grid.innerHTML = db.classMaterials.filter(m => m.title.toLowerCase().includes(q)).map(m => `
+        <div onclick="openMaterialDetailPage('${m.id}')" class="cursor-pointer bg-white dark:bg-zcard border border-slate-200 dark:border-zborder rounded-3xl overflow-hidden shadow-sm hover:border-zteal dark:hover:border-zbeige transition flex flex-col justify-between">
+          <div>
+            <img src="${m.thumbnail}" class="w-full h-44 object-cover" />
+            <div class="p-5 space-y-1.5">
+              <span class="text-[10px] font-bold text-zteal dark:text-zbeige">Oleh ${getMemberDisplayName(m.uploaderId)}</span>
+              <h3 class="font-extrabold text-base text-slate-900 dark:text-white">${m.title}</h3>
+              <p class="text-xs text-slate-500 dark:text-gray-400 line-clamp-2">${m.desc}</p>
+            </div>
+          </div>
+          <div class="px-5 pb-5">
+            <div class="w-full py-2.5 rounded-2xl bg-slate-100 dark:bg-zdark text-center text-xs font-extrabold text-zteal dark:text-zbeige">
+              Buka Halaman Materi
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function openMaterialDetailPage(matId) {
+      currentViewedMaterialId = matId;
+      navigateTo('class-detail');
+    }
+
+    function renderClassDetailPage() {
+      const m = db.classMaterials.find(x => x.id === currentViewedMaterialId);
+      if (!m) return;
+
+      document.getElementById('classDetailPageContent').innerHTML = `
+        <img src="${m.thumbnail}" class="w-full h-56 sm:h-72 object-cover" />
+        <div class="p-6 space-y-5">
+          <div class="space-y-1">
+            <span class="text-xs font-bold text-zteal dark:text-zbeige">Dibagikan oleh ${getMemberDisplayName(m.uploaderId)}</span>
+            <h1 class="text-2xl font-extrabold text-slate-900 dark:text-white">${m.title}</h1>
+          </div>
+          <p class="text-xs sm:text-sm text-slate-600 dark:text-gray-300 leading-relaxed">${m.desc}</p>
+
+          <div class="p-4 rounded-2xl bg-slate-50 dark:bg-zdark border border-slate-200 dark:border-zborder flex items-center justify-between gap-4">
+            <div class="flex items-center gap-3">
+              <i class="fa-solid fa-file-Arrow-down text-xl text-zteal dark:text-zbeige"></i>
+              <div>
+                <div class="text-xs font-extrabold text-slate-900 dark:text-white">${m.fileName}</div>
+                <div class="text-[11px] text-slate-400">${m.fileSize}</div>
+              </div>
+            </div>
+            <a href="${m.url}" target="_blank" download="${m.fileName}" class="px-5 py-2.5 rounded-xl bg-zteal dark:bg-zbeige text-white dark:text-zdark font-extrabold text-xs">
+              Buka / Unduh Materi
+            </a>
+          </div>
+        </div>
+      `;
+    }
+
+    function handleSaveNewClassMaterial(e) {
+      e.preventDefault();
+      const thumbIn = document.getElementById('newMatThumb');
+      const fileIn = document.getElementById('newMatFile');
+      const linkIn = document.getElementById('newMatLink').value.trim();
+
+      if (thumbIn.files[0] && !checkFileMax15MB(thumbIn)) return;
+      if (fileIn.files[0] && !checkFileMax15MB(fileIn, 'newMatLink')) return;
+
+      const finish = (thumbUrl) => {
+        const f = fileIn.files[0];
+        const newMat = {
+          id: 'cm_' + Date.now(),
+          title: document.getElementById('newMatTitle').value.trim(),
+          desc: document.getElementById('newMatDesc').value.trim(),
+          thumbnail: thumbUrl || 'https://images.unsplash.com/photo-1485846234645-a62644f84728?w=600&auto=format&fit=crop&q=80',
+          fileName: f ? f.name : 'Tautan Materi Eksternal',
+          fileSize: f ? Math.round(f.size / 1024) + ' KB' : 'Link',
+          url: f ? URL.createObjectURL(f) : (linkIn || 'https://zerava.web.id'),
+          uploaderId: currentUser.id
+        };
+        db.classMaterials.unshift(newMat);
+        db.notifications.unshift({
+          id: 'n_' + Date.now(),
+          type: 'class',
+          title: 'Materi Baru Ditambahkan!',
+          body: `${currentUser.name} membagikan materi "${newMat.title}"`,
+          time: 'Baru saja',
+          page: 'class'
+        });
+        saveDb();
+        fireSystemNotification('Materi Baru Zerava Class', `${currentUser.name} meng-upload "${newMat.title}"`);
+        openMaterialDetailPage(newMat.id);
+        showCenterPopup('Materi Berhasil Di-upload', `Materi <b>${newMat.title}</b> sudah tampil di Zerava Class dan Home Page.`);
+      };
+
+      if (thumbIn.files[0]) {
+        const r = new FileReader();
+        r.onload = () => finish(r.result);
+        r.readAsDataURL(thumbIn.files[0]);
+      } else {
+        finish(null);
+      }
+    }
+
+    // 15. PERBAIKAN NOTIFIKASI LUAR WEB (SERVICE WORKER + PERMISSION CHECK FIXED)
+    let swRegistration = null;
+
+    async function registerInlineServiceWorker() {
+      if (!('serviceWorker' in navigator)) return;
+      try {
+        const swCode = `
+          self.addEventListener('install', e => self.skipWaiting());
+          self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
+          self.addEventListener('notificationclick', e => {
+            e.notification.close();
+            e.waitUntil(clients.matchAll({ type: 'window' }).then(list => {
+              if (list.length > 0) return list[0].focus();
+              return clients.openWindow('/');
+            }));
+          });
+        `;
+        const blob = new Blob([swCode], { type: 'application/javascript' });
+        swRegistration = await navigator.serviceWorker.register(URL.createObjectURL(blob));
+      } catch (err) {
+        // Berjalan di file:// lokal, gunakan fallback Notification API
+      }
+    }
+
+    function playNotificationSound() {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.25);
+        gain.gain.setValueAtTime(0.2, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.25);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.25);
+      } catch (e) {}
+    }
+
+    async function fireSystemNotification(title, body) {
+      playNotificationSound();
+      if (!('Notification' in window)) return;
+
+      if (Notification.permission === 'granted') {
+        try {
+          if (swRegistration && swRegistration.showNotification) {
+            await swRegistration.showNotification(title, { body, vibrate: [200, 100, 200] });
+            return;
+          }
+        } catch (e) {}
+        try {
+          new Notification(title, { body });
+        } catch (e) {}
+      }
+    }
+
+    async function setupAndTestPushNotification() {
+      if (!('Notification' in window)) {
+        showCenterPopup('Tidak Didukung', 'Browser ini tidak memiliki fitur Web Notification.', 'fa-circle-exclamation');
+        return;
+      }
+
+      // Jika sudah granted, JANGAN tampilkan error izin lagi!
+      let perm = Notification.permission;
+      if (perm === 'default') {
+        perm = await Notification.requestPermission();
+      }
+
+      renderNotificationsPage();
+
+      if (perm === 'granted') {
+        showCenterPopup(
+          'Izin Notifikasi Sudah Aktif!',
+          'Sekarang coba <b>pindah ke tab lain atau minimalkan browser selama 3 detik</b>—notifikasi suara & pop-up pesan masuk akan otomatis berbunyi!',
+          'fa-bell'
+        );
+        setTimeout(() => {
+          const msg = {
+            id: 'n_' + Date.now(),
+            type: 'chat',
+            title: 'Pesan Masuk: Zerava Studio',
+            body: 'Ghaniyy (Ketua): Jangan lupa cek jadwal produksi terbaru ya!',
+            time: 'Baru saja',
+            page: 'chat'
+          };
+          db.notifications.unshift(msg);
+          saveDb();
+          fireSystemNotification(msg.title, msg.body);
+          if (!document.getElementById('page-notifications').classList.contains('hidden')) {
+            renderNotificationsPage();
+          }
+        }, 3000);
+      } else {
+        showCenterPopup('Izin Diblokir Browser', 'Silakan ubah pengaturan Notification di ikon gembok sebelah alamat web menjadi Allow/Izinkan.', 'fa-lock');
+      }
+    }
+
+    function renderNotificationsPage() {
+      const sub = document.getElementById('pushStatusSubtitle');
+      if ('Notification' in window) {
+        const p = Notification.permission;
+        sub.innerHTML = p === 'granted'
+          ? '<span class="text-emerald-500 font-bold"><i class="fa-solid fa-circle-check mr-1"></i>Izin Notifikasi Aktif (Siap menerima notifikasi latar belakang)</span>'
+          : '<span class="text-amber-500 font-bold">Klik tombol di samping untuk menguji notifikasi latar belakang</span>';
+      }
+
+      const box = document.getElementById('notifItemsContainer');
+      box.innerHTML = db.notifications.map(n => `
+        <div onclick="navigateTo('${n.page}')" class="p-4 flex items-center justify-between gap-3 hover:bg-slate-50 dark:hover:bg-white/5 cursor-pointer">
+          <div class="flex items-center gap-3.5">
+            <div class="w-10 h-10 rounded-2xl bg-zteal/15 dark:bg-zbeige/20 text-zteal dark:text-zbeige flex items-center justify-center">
+              <i class="fa-solid ${n.type === 'class' ? 'fa-graduation-cap' : 'fa-comment-dots'}"></i>
+            </div>
+            <div>
+              <div class="text-xs font-extrabold text-slate-900 dark:text-white">${n.title}</div>
+              <div class="text-xs text-slate-500 dark:text-gray-400">${n.body}</div>
+            </div>
+          </div>
+          <span class="text-[10px] text-slate-400 shrink-0">${n.time}</span>
+        </div>
+      `).join('');
+    }
+
+    // 16. MY PROFIL, TOMBOL ADMIN, & TOMBOL LOGOUT
+    function renderMyProfilePage() {
+      document.getElementById('myProfAvatarImg').src = currentUser.avatar;
+      document.getElementById('myProfFullName').textContent = currentUser.name;
+      document.getElementById('myProfEmailText').textContent = currentUser.email;
+      document.getElementById('myProfRolePill').textContent = `${currentUser.divisi} • ${currentUser.role}`;
+
+      document.getElementById('myProfNameIn').value = currentUser.name;
+      document.getElementById('myProfDivisiIn').value = currentUser.divisi;
+      document.getElementById('myProfBioIn').value = currentUser.bio || '';
+
+      // Tampilkan tombol Halaman Admin di dalam My Profil jika user adalah Admin/Ketua
+      const admBtn = document.getElementById('openAdminPageBtn');
+      if (currentUser.isAdmin) {
+        admBtn.classList.remove('hidden');
+      } else {
+        admBtn.classList.add('hidden');
+      }
+
+      const myFiles = [];
+      db.classMaterials.filter(m => m.uploaderId === currentUser.id).forEach(m => {
+        myFiles.push({ title: m.title, type: 'Zerava Class' });
+      });
+      db.projects.forEach(p => {
+        ['naskah', 'shootlist', 'storyboard', 'dokumen'].forEach(k => {
+          (p[k] || []).filter(f => f.uploaderId === currentUser.id).forEach(f => {
+            myFiles.push({ title: f.name, type: `${k.toUpperCase()} (${p.title})` });
+          });
+        });
+      });
+
+      document.getElementById('mySharedItemsBox').innerHTML = myFiles.map(f => `
+        <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-zdark border border-slate-200 dark:border-zborder flex items-center justify-between text-xs">
+          <span class="font-bold text-slate-900 dark:text-white">${f.title}</span>
+          <span class="text-zteal dark:text-zbeige font-semibold">${f.type}</span>
+        </div>
+      `).join('') || '<div class="text-xs text-slate-400">Belum ada materi atau dokumen yang kamu bagikan.</div>';
+    }
+
+    function handleChangeMyAvatar(e) {
+      const f = e.target.files[0];
+      if (!f || !checkFileMax15MB(e.target)) return;
+      const r = new FileReader();
+      r.onload = () => {
+        currentUser.avatar = r.result;
+        const idx = db.users.findIndex(u => u.id === currentUser.id);
+        if (idx > -1) db.users[idx].avatar = r.result;
+        localStorage.setItem('zerava_v2_user', JSON.stringify(currentUser));
+        saveDb();
+        renderMyProfilePage();
+        showCenterPopup('Foto Profil Diperbarui', 'Foto profil barumu berhasil disimpan.');
+      };
+      r.readAsDataURL(f);
+    }
+
+    function handleUpdateMyProfile(e) {
+      e.preventDefault();
+      currentUser.name = document.getElementById('myProfNameIn').value.trim();
+      currentUser.divisi = document.getElementById('myProfDivisiIn').value.trim();
+      currentUser.bio = document.getElementById('myProfBioIn').value.trim();
+
+      const idx = db.users.findIndex(u => u.id === currentUser.id);
+      if (idx > -1) db.users[idx] = { ...currentUser };
+      localStorage.setItem('zerava_v2_user', JSON.stringify(currentUser));
+      saveDb();
+      renderMyProfilePage();
+      showCenterPopup('Profil Disimpan', 'Data profilmu berhasil diperbarui.');
+    }
+
+    // 17. HALAMAN ADMIN (UNDANG EMAIL CALON MEMBER -> BUAT PASSWORD -> LOGIN)
+    function renderAdminPage() {
+      const box = document.getElementById('adminInviteHistoryList');
+      box.innerHTML = db.invites.map(inv => `
+        <div class="p-4 rounded-2xl bg-slate-50 dark:bg-zdark border border-slate-200 dark:border-zborder flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <div class="text-xs font-extrabold text-slate-900 dark:text-white">${inv.name} (${inv.email})</div>
+            <div class="text-[11px] text-slate-400">${inv.divisi} • ${inv.role}</div>
+          </div>
+          <button onclick="openSetPasswordFlow('${inv.email}')" class="px-4 py-2 rounded-xl bg-zpurple text-white font-bold text-xs shrink-0">
+            Buka Halaman Buat Password (Simulasi Klik Link Email)
+          </button>
+        </div>
+      `).join('') || '<div class="text-xs text-slate-400">Belum ada undangan baru yang dikirim.</div>';
+    }
+
+    function handleAdminSendInvite(e) {
+      e.preventDefault();
+      const email = document.getElementById('admInviteEmail').value.trim();
+      const name = document.getElementById('admInviteName').value.trim();
+      const divisi = document.getElementById('admInviteDivisi').value.trim();
+      const role = document.getElementById('admInviteRole').value.trim();
+
+      if (!db.users.find(u => u.email.toLowerCase() === email.toLowerCase())) {
+        const newU = {
+          id: 'u_' + Date.now(),
+          name, email, divisi, role,
+          isAdmin: false,
+          password: '123456',
+          online: true,
+          bio: `${divisi} • ${role} di Zerava Production.`,
+          avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=2B6E7E&color=fff&bold=true`
+        };
+        db.users.push(newU);
+        db.groups[0].members.push(newU.id);
+      }
+
+      db.invites.unshift({ email, name, divisi, role });
+      saveDb();
+      e.target.reset();
+      renderAdminPage();
+      showCenterPopup('Undangan Terkirim!', `Email berisi link pembuatan password telah disiapkan untuk <b>${email}</b>.`);
+    }
+
+    let targetSetPassEmail = '';
+    function openSetPasswordFlow(email) {
+      targetSetPassEmail = email;
+      document.getElementById('mainAppShell').classList.add('hidden');
+      document.getElementById('loginView').classList.add('hidden');
+      document.getElementById('setPasswordView').classList.remove('hidden');
+      document.getElementById('setPasswordView').classList.add('flex');
+
+      document.getElementById('setPassForm').classList.remove('hidden');
+      document.getElementById('setPassDoneBox').classList.add('hidden');
+      document.getElementById('setPassEmailText').textContent = email;
+    }
+
+    function handleSaveNewPassword(e) {
+      e.preventDefault();
+      const p1 = document.getElementById('newPass1').value;
+      const p2 = document.getElementById('newPass2').value;
+      if (p1 !== p2) {
+        showCenterPopup('Password Tidak Sama', 'Pastikan kedua kolom password diisi sama persis.', 'fa-circle-xmark');
+        return;
+      }
+      const u = db.users.find(x => x.email.toLowerCase() === targetSetPassEmail.toLowerCase());
+      if (u) u.password = p1;
+      saveDb();
+
+      document.getElementById('setPassForm').classList.add('hidden');
+      document.getElementById('setPassDoneBox').classList.remove('hidden');
+    }
+
+    function finishSetPasswordToLogin() {
+      document.getElementById('setPasswordView').classList.add('hidden');
+      document.getElementById('setPasswordView').classList.remove('flex');
+      document.getElementById('loginView').classList.remove('hidden');
+      document.getElementById('loginIdentifier').value = targetSetPassEmail;
+    }
+  </script>
+</body>
+</html>
