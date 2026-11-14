@@ -17,25 +17,18 @@
     // ============================================
     // SUPABASE & CLOUDFLARE R2 CONFIGURATION
     // ============================================
-    // TODO: Replace with your actual Supabase credentials
     const SUPABASE_URL = 'YOUR_SUPABASE_URL_HERE';
     const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY_HERE';
+    const CLOUDFLARE_UPLOAD_WORKER = 'https://upload.zerava.web.id/upload';
     
-    // TODO: Replace with your Cloudflare R2 endpoint
-    const CLOUDFLARE_R2_ENDPOINT = 'YOUR_R2_ENDPOINT_HERE';
-    const CLOUDFLARE_R2_BUCKET = 'zerava-filmboard';
-    
-    // Initialize Supabase client
     let supabase = null;
     try {
       if (SUPABASE_URL !== 'YOUR_SUPABASE_URL_HERE' && SUPABASE_ANON_KEY !== 'YOUR_SUPABASE_ANON_KEY_HERE') {
         supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        console.log('Supabase initialized successfully');
-      } else {
-        console.warn('Supabase credentials not configured. Using localStorage fallback.');
+        console.log('Supabase initialized');
       }
-    } catch (error) {
-      console.error('Supabase initialization error:', error);
+    } catch (e) {
+      console.warn('Supabase not configured, using localStorage');
     }
 
     tailwind.config = {
@@ -935,141 +928,59 @@
 
     function saveDb() {
       localStorage.setItem('zerava_v2_db', JSON.stringify(db));
-      
-      // Sync to Supabase if configured
-      if (supabase && currentUser) {
-        syncToSupabase();
-      }
+      if (supabase) syncToSupabase();
     }
 
-    // Supabase sync functions
     async function syncToSupabase() {
-      if (!supabase || !currentUser) return;
-      
+      if (!supabase) return;
       try {
-        // Sync users
-        const { error: usersError } = await supabase
-          .from('users')
-          .upsert(db.users.map(u => ({
-            id: u.id,
-            name: u.name,
-            email: u.email,
-            divisi: u.divisi,
-            role: u.role,
-            bio: u.bio,
-            avatar: u.avatar,
-            is_admin: u.isAdmin
-          })), { onConflict: 'id' });
-        
-        // Sync projects
-        const { error: projectsError } = await supabase
-          .from('projects')
-          .upsert(db.projects.map(p => ({
-            id: p.id,
-            title: p.title,
-            status: p.status,
-            deadline: p.deadline
-          })), { onConflict: 'id' });
-        
-        // Sync messages
-        const { error: messagesError } = await supabase
-          .from('messages')
-          .upsert(db.messages.map(m => ({
-            id: m.id,
-            room_id: m.roomId,
-            sender_id: m.senderId,
-            text: m.text,
-            timestamp: m.timestamp
-          })), { onConflict: 'id' });
-        
-        if (usersError || projectsError || messagesError) {
-          console.error('Supabase sync error:', { usersError, projectsError, messagesError });
-        } else {
-          console.log('Successfully synced to Supabase');
-        }
-      } catch (error) {
-        console.error('Supabase sync failed:', error);
-      }
+        await supabase.from('zerava_users').upsert(db.users.map(u => ({
+          id: u.id, name: u.name, email: u.email, divisi: u.divisi, role: u.role,
+          bio: u.bio, avatar: u.avatar, is_admin: u.isAdmin, password: u.password, online: u.online
+        })), { onConflict: 'id' });
+        await supabase.from('zerava_messages').upsert(db.messages.map(m => ({
+          id: m.id, room_id: m.roomId, sender_id: m.senderId, text: m.text,
+          reply_to: m.replyTo, timestamp: m.timestamp
+        })), { onConflict: 'id' });
+        await supabase.from('zerava_projects').upsert(db.projects.map(p => ({
+          id: p.id, title: p.title, status: p.status, deadline: p.deadline,
+          naskah: p.naskah, shootlist: p.shootlist, storyboard: p.storyboard, dokumen: p.dokumen
+        })), { onConflict: 'id' });
+        console.log('Synced to Supabase');
+      } catch (e) { console.error('Sync error:', e); }
     }
 
     async function loadFromSupabase() {
       if (!supabase) return;
-      
       try {
-        const [users, projects, messages] = await Promise.all([
-          supabase.from('users').select('*'),
-          supabase.from('projects').select('*'),
-          supabase.from('messages').select('*')
+        const [users, messages, projects] = await Promise.all([
+          supabase.from('zerava_users').select('*'),
+          supabase.from('zerava_messages').select('*'),
+          supabase.from('zerava_projects').select('*')
         ]);
-        
-        if (users.data && !users.error) {
-          db.users = users.data.map(u => ({
-            id: u.id,
-            name: u.name,
-            email: u.email,
-            divisi: u.divisi,
-            role: u.role,
-            bio: u.bio,
-            avatar: u.avatar,
-            isAdmin: u.is_admin
-          }));
-        }
-        
-        if (projects.data && !projects.error) {
-          db.projects = projects.data.map(p => ({
-            id: p.id,
-            title: p.title,
-            status: p.status,
-            deadline: p.deadline,
-            naskah: [],
-            shootlist: [],
-            storyboard: [],
-            dokumen: []
-          }));
-        }
-        
-        if (messages.data && !messages.error) {
-          db.messages = messages.data.map(m => ({
-            id: m.id,
-            roomId: m.room_id,
-            senderId: m.sender_id,
-            text: m.text,
-            timestamp: m.timestamp
-          }));
-        }
-        
+        if (users.data) db.users = users.data.map(u => ({ ...u, isAdmin: u.is_admin }));
+        if (messages.data) db.messages = messages.data.map(m => ({ ...m, roomId: m.room_id, senderId: m.sender_id, replyTo: m.reply_to }));
+        if (projects.data) db.projects = projects.data;
         saveDb();
-        console.log('Successfully loaded from Supabase');
-      } catch (error) {
-        console.error('Supabase load failed:', error);
-      }
+      } catch (e) { console.error('Load error:', e); }
     }
 
-    // Cloudflare R2 upload function
-    async function uploadToR2(file, fileName) {
-      if (CLOUDFLARE_R2_ENDPOINT === 'YOUR_R2_ENDPOINT_HERE') {
-        console.warn('Cloudflare R2 not configured. Using base64 fallback.');
-        return null;
-      }
-      
-      try {
+    async function uploadToR2(file, filename) {
+      if (CLOUDFLARE_UPLOAD_WORKER === 'https://upload.zerava.web.id/upload') {
         const formData = new FormData();
         formData.append('file', file);
-        formData.append('key', fileName);
-        
-        const response = await fetch(`${CLOUDFLARE_R2_ENDPOINT}/upload`, {
-          method: 'POST',
-          body: formData
-        });
-        
-        if (!response.ok) throw new Error('R2 upload failed');
-        
-        const data = await response.json();
-        return data.url;
-      } catch (error) {
-        console.error('R2 upload error:', error);
-        return null;
+        formData.append('key', filename);
+        try {
+          const res = await fetch(CLOUDFLARE_UPLOAD_WORKER, { method: 'POST', body: formData });
+          const data = await res.json();
+          if (data.success) return data.url;
+          throw new Error(data.error || 'Upload failed');
+        } catch (e) {
+          console.warn('R2 upload failed, using base64 fallback:', e);
+          return null;
+        }
       }
+      return null;
     }
 
     // 3. CENTERED POP-UP (TENGAH LAYAR)
@@ -1623,12 +1534,20 @@
     function handleChangeGroupAvatar(e, groupId) {
       const f = e.target.files[0];
       if (!f || !checkFileMax15MB(e.target)) return;
-      const r = new FileReader();
-      r.onload = () => {
-        const g = db.groups.find(x => x.id === groupId);
-        if (g) { g.avatar = r.result; saveDb(); renderGroupInfoPage(); }
-      };
-      r.readAsDataURL(f);
+      const filename = `group_${groupId}_${Date.now()}.${f.name.split('.').pop()}`;
+      uploadToR2(f, filename).then(url => {
+        if (url) {
+          const g = db.groups.find(x => x.id === groupId);
+          if (g) { g.avatar = url; saveDb(); renderGroupInfoPage(); }
+        } else {
+          const r = new FileReader();
+          r.onload = () => {
+            const g = db.groups.find(x => x.id === groupId);
+            if (g) { g.avatar = r.result; saveDb(); renderGroupInfoPage(); }
+          };
+          r.readAsDataURL(f);
+        }
+      });
     }
 
     // 13. PRODUCTION FILM & TANGGAL KALENDER RESMI
@@ -2234,17 +2153,30 @@
     function handleChangeMyAvatar(e) {
       const f = e.target.files[0];
       if (!f || !checkFileMax15MB(e.target)) return;
-      const r = new FileReader();
-      r.onload = () => {
-        currentUser.avatar = r.result;
-        const idx = db.users.findIndex(u => u.id === currentUser.id);
-        if (idx > -1) db.users[idx].avatar = r.result;
-        localStorage.setItem('zerava_v2_user', JSON.stringify(currentUser));
-        saveDb();
-        renderMyProfilePage();
-        showCenterPopup('Foto Profil Diperbarui', 'Foto profil barumu berhasil disimpan.');
-      };
-      r.readAsDataURL(f);
+      const filename = `avatar_${currentUser.id}_${Date.now()}.${f.name.split('.').pop()}`;
+      uploadToR2(f, filename).then(url => {
+        if (url) {
+          currentUser.avatar = url;
+          const idx = db.users.findIndex(u => u.id === currentUser.id);
+          if (idx > -1) db.users[idx].avatar = url;
+          localStorage.setItem('zerava_v2_user', JSON.stringify(currentUser));
+          saveDb();
+          renderMyProfilePage();
+          showCenterPopup('Foto Profil Diperbarui', 'Foto profil barumu berhasil disimpan.');
+        } else {
+          const r = new FileReader();
+          r.onload = () => {
+            currentUser.avatar = r.result;
+            const idx = db.users.findIndex(u => u.id === currentUser.id);
+            if (idx > -1) db.users[idx].avatar = r.result;
+            localStorage.setItem('zerava_v2_user', JSON.stringify(currentUser));
+            saveDb();
+            renderMyProfilePage();
+            showCenterPopup('Foto Profil Diperbarui', 'Foto profil barumu berhasil disimpan.');
+          };
+          r.readAsDataURL(f);
+        }
+      });
     }
 
     function handleUpdateMyProfile(e) {

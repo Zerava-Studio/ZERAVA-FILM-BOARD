@@ -1,0 +1,10 @@
+name = "zerava-upload-worker"
+main = "cloudflare-worker-upload.js"
+compatibility_date = "2024-01-01"
+
+[[r2_buckets]]
+binding = "ZERAVA_STORAGE"
+bucket_name = "zerava-storage"
+
+[vars]
+ENVIRONMENT = "production"
